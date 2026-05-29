@@ -1,0 +1,24 @@
+// Top-level build file
+buildscript {
+    ext.kotlin_version = '1.9.22'
+    ext.compose_bom = '2024.02.00'
+    ext.hilt_version = '2.50'
+    
+    repositories {
+        google()
+        mavenCentral()
+    }
+    
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "com.google.dagger:hilt-android-gradle-plugin:$hilt_version"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

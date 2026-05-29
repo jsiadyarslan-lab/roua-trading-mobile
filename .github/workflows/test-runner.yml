@@ -1,0 +1,30 @@
+name: Test Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Runner Availability
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello
+        run: echo "✅ Runner is working! Hello from GitHub Actions"
+      
+      - name: System Info
+        run: |
+          uname -a
+          echo "Node: $(node --version 2>/dev/null || echo 'N/A')"
+          echo "Python: $(python3 --version 2>/dev/null || echo 'N/A')"
+
+  test-macos:
+    name: Test macOS Runner
+    runs-on: macos-latest
+    steps:
+      - name: Hello macOS
+        run: echo "✅ macOS runner is working!"
+      
+      - name: macOS Info
+        run: |
+          sw_vers
+          xcodebuild -version 2>/dev/null || echo "Xcode not found"

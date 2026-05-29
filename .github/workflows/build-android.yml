@@ -5,13 +5,12 @@ on:
     branches: [main, develop]
     paths:
       - 'android/**'
-      - 'shared/**'
       - '.github/workflows/build-android.yml'
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build & Sign APK
+    name: Build APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -25,35 +24,18 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          gradle-version: '8.5'
 
-      - name: Grant execute permission
+      - name: Create gradlew wrapper
         working-directory: android
-        run: chmod +x gradlew
+        run: |
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Build Release APK (if keystore available)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        working-directory: android
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=app/keystore.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -62,10 +44,10 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Upload Release APK
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: Upload build logs on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: RouaTrading-Android-release
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+          name: android-build-logs
+          path: android/app/build/reports/
+          retention-days: 7

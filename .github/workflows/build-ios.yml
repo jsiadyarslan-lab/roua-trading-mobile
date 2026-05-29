@@ -5,7 +5,6 @@ on:
     branches: [main, develop]
     paths:
       - 'ios/**'
-      - 'shared/**'
       - '.github/workflows/build-ios.yml'
   workflow_dispatch:
     inputs:
@@ -20,7 +19,6 @@ on:
 
 env:
   SCHEME: RouaTrading
-  PROJECT: ios/RouaTrading/RouaTrading.xcodeproj
   CONFIGURATION: ${{ github.event.inputs.configuration || 'Release' }}
 
 jobs:
@@ -36,138 +34,92 @@ jobs:
         with:
           xcode-version: '15.4'
 
-      - name: Cache Swift Package Manager
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData
-            ios/RouaTrading/.build
-            ios/RouaTrading/.swiftpm
-          key: ${{ runner.os }}-spm-${{ hashFiles('ios/RouaTrading/Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
-      - name: Install dependencies (Swift Package Manager)
+      - name: Generate Xcode Project
         working-directory: ios/RouaTrading
         run: |
-          if [ -f Package.swift ]; then
-            swift package resolve
-          fi
+          xcodegen generate
+          echo "✅ Xcode project generated"
+          ls -la *.xcodeproj 2>/dev/null || echo "No .xcodeproj found"
 
-      - name: Build Xcode project
+      - name: Resolve Swift Package Dependencies
         working-directory: ios/RouaTrading
         run: |
-          # If .xcodeproj exists, use it; otherwise use Package.swift
-          if [ -d RouaTrading.xcodeproj ]; then
-            xcodebuild build \
-              -project RouaTrading.xcodeproj \
-              -scheme "${{ env.SCHEME }}" \
-              -configuration "${{ env.CONFIGURATION }}" \
-              -destination 'generic/platform=iOS' \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              COMPILER_INDEX_STORE_ENABLE=NO
-          elif [ -f Package.swift ]; then
-            swift build -c release
-          else
-            echo "ERROR: No Xcode project or Package.swift found!"
-            exit 1
-          fi
+          xcodebuild -resolvePackageDependencies \
+            -project RouaTrading.xcodeproj \
+            -scheme ${{ env.SCHEME }} \
+            -clonedSourcePackagesDirPath SourcePackages
 
-      - name: Create Archive (unsigned)
+      - name: Build
+        working-directory: ios/RouaTrading
+        run: |
+          xcodebuild build \
+            -project RouaTrading.xcodeproj \
+            -scheme ${{ env.SCHEME }} \
+            -configuration ${{ env.CONFIGURATION }} \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            | tail -20
+
+      - name: Archive (unsigned)
         working-directory: ios/RouaTrading
         run: |
           xcodebuild archive \
             -project RouaTrading.xcodeproj \
-            -scheme "${{ env.SCHEME }}" \
-            -configuration "${{ env.CONFIGURATION }}" \
+            -scheme ${{ env.SCHEME }} \
+            -configuration ${{ env.CONFIGURATION }} \
             -destination 'generic/platform=iOS' \
             -archivePath build/RouaTrading.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            SKIP_INSTALL=NO
+            SKIP_INSTALL=NO \
+            | tail -20
 
-      - name: Export IPA (unsigned for sideloading)
+      - name: Create IPA (unsigned for sideloading)
         working-directory: ios/RouaTrading/build
         run: |
-          # Create export options plist for unsigned/ad-hoc export
-          cat > ExportOptions.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>ad-hoc</string>
-              <key>signingStyle</key>
-              <string>automatic</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>teamID</key>
-              <string>${{ secrets.APPLE_TEAM_ID }}</string>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
-
-          # Try signed export if certificates are available, otherwise unsigned
-          if [ -n "${{ secrets.APPLE_P12_BASE64 }}" ]; then
-            echo "🍎 Apple certificate found — creating signed IPA"
-            mkdir -p /tmp/certs
-            echo "${{ secrets.APPLE_P12_BASE64 }}" | base64 -d > /tmp/certs/certificate.p12
-
-            # Install certificate in keychain
-            security create-keychain -p actions temp.keychain
-            security import /tmp/certs/certificate.p12 \
-              -k temp.keychain \
-              -P "${{ secrets.APPLE_P12_PASSWORD }}" \
-              -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple: -k actions temp.keychain
-            security list-keychains -d user -s temp.keychain
-
-            # Download provisioning profile
-            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-            echo "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 -d \
-              > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-
-            xcodebuild -exportArchive \
-              -archivePath RouaTrading.xcarchive \
-              -exportPath ./ipa_output \
-              -exportOptionsPlist ExportOptions.plist
-
-            security delete-keychain temp.keychain
-          else
-            echo "📦 No Apple certificate — creating unsigned IPA for sideloading"
-            # Create IPA manually from .app in archive
-            APP_PATH=$(find RouaTrading.xcarchive/Products/Applications -name "*.app" | head -1)
-            if [ -z "$APP_PATH" ]; then
-              echo "ERROR: No .app found in archive"
-              exit 1
-            fi
-            mkdir -p ./ipa_output/Payload
-            cp -r "$APP_PATH" ./ipa_output/Payload/
-            cd ./ipa_output
-            zip -r RouaTrading.ipa Payload/
-            cd ..
+          # Find the .app bundle in the archive
+          APP_PATH=$(find RouaTrading.xcarchive/Products/Applications -name "*.app" 2>/dev/null | head -1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app found in archive — checking DerivedData..."
+            APP_PATH=$(find ../build/Build/Products -name "*.app" 2>/dev/null | head -1)
           fi
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ ERROR: No .app bundle found anywhere"
+            find . -name "*.app" 2>/dev/null
+            exit 1
+          fi
+          
+          echo "📦 Found app: $APP_PATH"
+          mkdir -p ./ipa_output/Payload
+          cp -r "$APP_PATH" ./ipa_output/Payload/
+          cd ./ipa_output
+          zip -r RouaTrading.ipa Payload/
+          echo "✅ IPA created: $(ls -lh RouaTrading.ipa)"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RouaTrading-iOS
-          path: ios/RouaTrading/build/ipa_output/*.ipa
+          name: RouaTrading-iOS-IPA
+          path: ios/RouaTrading/build/ipa_output/RouaTrading.ipa
           retention-days: 30
 
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          path: ios/RouaTrading/build/*.log
+          name: ios-build-logs
+          path: |
+            ios/RouaTrading/build/*.log
+            ios/RouaTrading/xcodebuild-*.log
           retention-days: 7

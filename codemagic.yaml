@@ -1,0 +1,85 @@
+workflows:
+  build-ipa:
+    name: Build Unsigned IPA
+    environment:
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen 2>/dev/null || echo "XcodeGen already available"
+          xcodegen --version
+
+      - name: Generate Xcode Project (no signing)
+        script: |
+          cd ios/RouaTrading
+          # Disable code signing in project.yml
+          cat project.yml | \
+            sed 's/CODE_SIGN_STYLE: Automatic/CODE_SIGN_STYLE: Manual/' | \
+            sed 's/CODE_SIGN_IDENTITY: "Apple Development"/CODE_SIGN_IDENTITY: ""/' | \
+            sed 's/CODE_SIGN_IDENTITY: "Apple Distribution"/CODE_SIGN_IDENTITY: ""/' | \
+            sed 's/CODE_SIGNING_REQUIRED: true/CODE_SIGNING_REQUIRED: false/' | \
+            sed 's/DEVELOPMENT_TEAM: "\${APPLE_TEAM_ID}"/DEVELOPMENT_TEAM: ""/' \
+            > project_unsigned.yml
+          mv project.yml project.yml.bak
+          mv project_unsigned.yml project.yml
+          xcodegen generate
+          echo "Generated project:"
+          ls -la *.xcodeproj
+
+      - name: Resolve SPM Dependencies
+        script: |
+          cd ios/RouaTrading
+          xcodebuild -resolvePackageDependencies \
+            -project RouaTrading.xcodeproj \
+            -scheme RouaTrading \
+            -clonedSourcePackagesDirPath SourcePackages \
+            2>&1 | tail -20
+
+      - name: Build (unsigned)
+        script: |
+          cd ios/RouaTrading
+          mkdir -p build_output
+          xcodebuild build \
+            -project RouaTrading.xcodeproj \
+            -scheme RouaTrading \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build_output/DerivedData \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            SKIP_INSTALL=NO \
+            2>&1 | tail -50
+
+      - name: Create IPA
+        script: |
+          APP_PATH=$(find ios/RouaTrading/build_output/DerivedData -name "*.app" -path "*/Release-iphoneos/*" 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Searching broader..."
+            APP_PATH=$(find ios/RouaTrading/build_output -name "*.app" 2>/dev/null | head -1)
+          fi
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found"
+            find . -name "*.app" 2>/dev/null
+            exit 1
+          fi
+          echo "Found: $APP_PATH"
+          mkdir -p ipa_output/Payload
+          cp -r "$APP_PATH" ipa_output/Payload/
+          cd ipa_output
+          zip -r RouaTrading.ipa Payload/
+          echo "IPA created:"
+          ls -lh RouaTrading.ipa
+
+    artifacts:
+      - ipa_output/RouaTrading.ipa

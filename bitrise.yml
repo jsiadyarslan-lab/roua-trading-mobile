@@ -1,16 +1,28 @@
 ---
-format_version: '12'
+format_version: "26"
 default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
 project_type: ios
+
+app:
+  envs:
+    - BITRISE_PROJECT_PATH: ios/RouaTrading/RouaTrading.xcodeproj
+      opts:
+        is_expand: false
+    - BITRISE_SCHEME: RouaTrading
+      opts:
+        is_expand: false
+
+meta:
+  bitrise.io:
+    machine_type_id: g2.mac.large
+    stack: osx-xcode-26.5.x
 
 workflows:
   primary:
     title: Build Unsigned IPA
-    meta:
-      bitrise.io:
-        stack: osx-xcode-26.5.x
-        machine_type_id: g2.mac.large
     steps:
+      - activate-ssh-key@4:
+          run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
       - git-clone@8: {}
       - script@1:
           title: Install XcodeGen
@@ -106,3 +118,51 @@ workflows:
           inputs:
             - deploy_path: "$BITRISE_SOURCE_DIR/ipa_output/RouaTrading.ipa"
             - is_compress: false
+
+  run_tests:
+    title: Run Tests
+    steps:
+      - activate-ssh-key@4:
+          run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+      - git-clone@8: {}
+      - script@1:
+          title: Install XcodeGen
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                brew install xcodegen 2>/dev/null || echo "XcodeGen already available"
+      - script@1:
+          title: Generate Xcode Project (no signing)
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                cd "$BITRISE_SOURCE_DIR/ios/RouaTrading"
+                cat project.yml | \
+                  sed 's/CODE_SIGN_STYLE: Automatic/CODE_SIGN_STYLE: Manual/' | \
+                  sed 's/CODE_SIGN_IDENTITY: "Apple Development"/CODE_SIGN_IDENTITY: ""/' | \
+                  sed 's/CODE_SIGN_IDENTITY: "Apple Distribution"/CODE_SIGN_IDENTITY: ""/' | \
+                  sed 's/CODE_SIGNING_REQUIRED: true/CODE_SIGNING_REQUIRED: false/' | \
+                  sed 's/DEVELOPMENT_TEAM: "\${APPLE_TEAM_ID}"/DEVELOPMENT_TEAM: ""/' \
+                  > project_unsigned.yml
+                mv project.yml project.yml.bak
+                mv project_unsigned.yml project.yml
+                xcodegen generate
+      - script@1:
+          title: Build for Testing
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -e
+                cd "$BITRISE_SOURCE_DIR/ios/RouaTrading"
+                xcodebuild build-for-testing \
+                  -project RouaTrading.xcodeproj \
+                  -scheme RouaTrading \
+                  -destination 'platform=iOS Simulator,name=iPhone 16' \
+                  CODE_SIGNING_ALLOWED=NO \
+                  CODE_SIGN_IDENTITY="" \
+                  CODE_SIGNING_REQUIRED=NO \
+                  DEVELOPMENT_TEAM="" \
+                  2>&1 | tail -30
+      - deploy-to-bitrise-io@2: {}

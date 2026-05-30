@@ -2,7 +2,10 @@ workflows:
   build-ipa:
     name: Build Unsigned IPA
     environment:
-      xcode: latest
+      xcode: 15.4
+      vars:
+        XCODE_PROJECT: "ios/RouaTrading/RouaTrading.xcodeproj"
+        XCODE_SCHEME: "RouaTrading"
     triggering:
       events:
         - push
@@ -18,8 +21,8 @@ workflows:
       - name: Generate Xcode Project
         script: |
           cd ios/RouaTrading
-          # Create a clean project.yml for unsigned builds
-          cat > project.yml << 'PROJEOF'
+          # Write a clean project.yml for unsigned builds (no code signing, Swift 5.9 compatible)
+          cat > project.yml << 'EOF'
           name: RouaTrading
           options:
             bundleIdPrefix: com.roua
@@ -30,10 +33,11 @@ workflows:
           settings:
             base:
               SWIFT_VERSION: "5.9"
+              SWIFT_STRICT_CONCURRENCY: minimal
               CODE_SIGN_STYLE: Manual
               DEVELOPMENT_TEAM: ""
               CODE_SIGN_IDENTITY: ""
-              CODE_SIGNING_REQUIRED: false
+              CODE_SIGNING_REQUIRED: "NO"
 
           targets:
             RouaTrading:
@@ -49,23 +53,24 @@ workflows:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.roua.trading
                   INFOPLIST_FILE: RouaTrading/Sources/Resources/Info.plist
-                  CODE_SIGN_ENTITLEMENTS: RouaTrading/Sources/Resources/RouaTrading.entitlements
                   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
                   TARGETED_DEVICE_FAMILY: "1,2"
                   GENERATE_INFOPLIST_FILE: false
                   MARKETING_VERSION: "1.0.0"
                   CURRENT_PROJECT_VERSION: "1"
+                  SWIFT_STRICT_CONCURRENCY: minimal
                   CODE_SIGN_IDENTITY: ""
-                  CODE_SIGNING_REQUIRED: false
-                  CODE_SIGNING_ALLOWED: false
-                Debug:
-                  CODE_SIGN_IDENTITY: ""
-                  CODE_SIGNING_REQUIRED: false
-                  SWIFT_OPTIMIZATION_LEVEL: "-Onone"
-                Release:
-                  CODE_SIGN_IDENTITY: ""
-                  CODE_SIGNING_REQUIRED: false
-                  SWIFT_OPTIMIZATION_LEVEL: "-O"
+                  CODE_SIGNING_REQUIRED: "NO"
+                  CODE_SIGNING_ALLOWED: "NO"
+                configs:
+                  Debug:
+                    CODE_SIGN_IDENTITY: ""
+                    CODE_SIGNING_REQUIRED: "NO"
+                    SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+                  Release:
+                    CODE_SIGN_IDENTITY: ""
+                    CODE_SIGNING_REQUIRED: "NO"
+                    SWIFT_OPTIMIZATION_LEVEL: "-O"
               dependencies:
                 - package: socket.io-client-swift
                   product: SocketIO
@@ -79,13 +84,24 @@ workflows:
             KeychainAccess:
               url: https://github.com/kishikawakatsumi/KeychainAccess
               from: "4.2.2"
-          PROJEOF
-          
+          EOF
+
+          # Remove old xcodeproj to force regeneration
+          rm -rf RouaTrading.xcodeproj
+
           xcodegen generate
           echo "Generated project:"
           ls -la *.xcodeproj
           echo "Available schemes:"
           xcodebuild -project RouaTrading.xcodeproj -list
+
+      - name: Resolve SPM Dependencies
+        script: |
+          cd ios/RouaTrading
+          xcodebuild -project RouaTrading.xcodeproj \
+            -scheme RouaTrading \
+            -resolvePackageDependencies \
+            -clonedSourcePackagesDirPath SourcePackages
 
       - name: Build (unsigned)
         script: |
@@ -96,6 +112,7 @@ workflows:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath build/RouaTrading.xcarchive \
+            -clonedSourcePackagesDirPath SourcePackages \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -103,21 +120,29 @@ workflows:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             SKIP_INSTALL=NO \
-            INSTALL_PATH=/Applications
+            INSTALL_PATH=/Applications \
+            SWIFT_STRICT_CONCURRENCY=minimal \
+            2>&1 | tee build.log
+
+          echo "Build exit code: $?"
 
       - name: Create IPA
         script: |
           APP_PATH=$(find ios/RouaTrading/build/RouaTrading.xcarchive/Products/Applications -name "*.app" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "No .app in archive. Searching..."
+            echo "No .app in archive Applications. Searching DerivedData..."
             APP_PATH=$(find ios/RouaTrading/build -name "*.app" 2>/dev/null | head -1)
           fi
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found"
-            find ios/RouaTrading/build -type f 2>/dev/null | head -20
+            echo "ERROR: No .app found anywhere"
+            echo "Build artifacts:"
+            find ios/RouaTrading/build -type f 2>/dev/null | head -30
+            echo "---"
+            echo "Build log (last 100 lines):"
+            tail -100 ios/RouaTrading/build.log 2>/dev/null
             exit 1
           fi
-          echo "Found: $APP_PATH"
+          echo "Found .app: $APP_PATH"
           ls -la "$APP_PATH/" | head -10
           mkdir -p ipa_output/Payload
           cp -r "$APP_PATH" ipa_output/Payload/

@@ -4,7 +4,7 @@ default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
 project_type: ios
 
 workflows:
-  build-ipa:
+  primary:
     title: Build IPA (unsigned)
     summary: Build unsigned IPA for sideloading via AltStore/Sideloadly
     steps:
@@ -58,7 +58,6 @@ workflows:
                 ARCHIVE_DIR="$BITRISE_SOURCE_DIR/ios/RouaTrading/build/RouaTrading.xcarchive"
                 IPA_DIR="$BITRISE_SOURCE_DIR/ios/RouaTrading/build/ipa_output"
 
-                # Find .app in archive
                 APP_PATH=$(find "$ARCHIVE_DIR/Products/Applications" -name "*.app" 2>/dev/null | head -1)
 
                 if [ -z "$APP_PATH" ]; then

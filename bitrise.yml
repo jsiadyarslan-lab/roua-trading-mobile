@@ -6,10 +6,11 @@ project_type: ios
 workflows:
   primary:
     title: Build Unsigned IPA
-    summary: Build unsigned IPA for sideloading via AltStore/Sideloadly
+    meta:
+      bitrise.io:
+        stack: osx-xcode-26.5.x
+        machine_type_id: g2.mac.large
     steps:
-      - activate-ssh-key@4:
-          run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
       - git-clone@8: {}
       - script@1:
           title: Install XcodeGen
@@ -17,7 +18,6 @@ workflows:
             - content: |-
                 #!/usr/bin/env bash
                 set -e
-                echo "Installing XcodeGen..."
                 brew install xcodegen 2>/dev/null || echo "XcodeGen already available"
                 xcodegen --version
 
@@ -28,8 +28,6 @@ workflows:
                 #!/usr/bin/env bash
                 set -e
                 cd "$BITRISE_SOURCE_DIR/ios/RouaTrading"
-                
-                # Override project.yml to disable code signing
                 cat project.yml | \
                   sed 's/CODE_SIGN_STYLE: Automatic/CODE_SIGN_STYLE: Manual/' | \
                   sed 's/CODE_SIGN_IDENTITY: "Apple Development"/CODE_SIGN_IDENTITY: ""/' | \
@@ -37,13 +35,9 @@ workflows:
                   sed 's/CODE_SIGNING_REQUIRED: true/CODE_SIGNING_REQUIRED: false/' | \
                   sed 's/DEVELOPMENT_TEAM: "\${APPLE_TEAM_ID}"/DEVELOPMENT_TEAM: ""/' \
                   > project_unsigned.yml
-                
                 mv project.yml project.yml.bak
                 mv project_unsigned.yml project.yml
-                
-                echo "Generating Xcode project..."
                 xcodegen generate
-                echo "Generated project:"
                 ls -la *.xcodeproj
 
       - script@1:
@@ -66,9 +60,7 @@ workflows:
                 #!/usr/bin/env bash
                 set -e
                 cd "$BITRISE_SOURCE_DIR/ios/RouaTrading"
-                
                 mkdir -p build_output
-                
                 xcodebuild build \
                   -project RouaTrading.xcodeproj \
                   -scheme RouaTrading \
@@ -83,10 +75,7 @@ workflows:
                   PROVISIONING_PROFILE_SPECIFIER="" \
                   SKIP_INSTALL=NO \
                   2>&1 | tail -50
-                
-                echo ""
-                echo "=== Build products ==="
-                find build_output/DerivedData -name "*.app" 2>/dev/null || echo "No .app found in DerivedData"
+                find build_output/DerivedData -name "*.app" 2>/dev/null || echo "No .app found"
 
       - script@1:
           title: Create IPA
@@ -94,48 +83,26 @@ workflows:
             - content: |-
                 #!/usr/bin/env bash
                 set -e
-                
                 APP_PATH=$(find "$BITRISE_SOURCE_DIR/ios/RouaTrading/build_output/DerivedData" -name "*.app" -path "*/Release-iphoneos/*" 2>/dev/null | head -1)
-                
                 if [ -z "$APP_PATH" ]; then
-                  echo "Searching broader..."
                   APP_PATH=$(find "$BITRISE_SOURCE_DIR/ios/RouaTrading/build_output" -name "*.app" 2>/dev/null | head -1)
                 fi
-                
                 if [ -z "$APP_PATH" ]; then
-                  echo "ERROR: No .app bundle found anywhere!"
+                  echo "ERROR: No .app found"
                   find "$BITRISE_SOURCE_DIR" -name "*.app" 2>/dev/null
                   exit 1
                 fi
-                
-                echo "Found app: $APP_PATH"
-                
+                echo "Found: $APP_PATH"
                 IPA_DIR="$BITRISE_SOURCE_DIR/ipa_output"
                 mkdir -p "$IPA_DIR/Payload"
                 cp -r "$APP_PATH" "$IPA_DIR/Payload/"
                 cd "$IPA_DIR"
                 zip -r RouaTrading.ipa Payload/
-                
-                echo ""
-                echo "=== IPA Created ==="
                 ls -lh RouaTrading.ipa
-                
-                # Set env var for deploy step
                 envman add --key BITRISE_IPA_PATH --value "$IPA_DIR/RouaTrading.ipa"
 
       - deploy-to-bitrise-io@2:
-          title: Upload IPA artifact
+          title: Upload IPA
           inputs:
             - deploy_path: "$BITRISE_SOURCE_DIR/ipa_output/RouaTrading.ipa"
             - is_compress: false
-
-      - script@1:
-          title: Cleanup
-          is_always_run: true
-          inputs:
-            - content: |-
-                #!/usr/bin/env bash
-                # Restore original project.yml
-                if [ -f "$BITRISE_SOURCE_DIR/ios/RouaTrading/project.yml.bak" ]; then
-                  mv "$BITRISE_SOURCE_DIR/ios/RouaTrading/project.yml.bak" "$BITRISE_SOURCE_DIR/ios/RouaTrading/project.yml"
-                fi

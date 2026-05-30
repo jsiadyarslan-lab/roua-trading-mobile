@@ -39,19 +39,18 @@ workflows:
           xcodebuild -resolvePackageDependencies \
             -project RouaTrading.xcodeproj \
             -scheme RouaTrading \
-            -clonedSourcePackagesDirPath SourcePackages \
-            2>&1 | tail -20
+            -clonedSourcePackagesDirPath SourcePackages
 
       - name: Build (unsigned)
         script: |
           cd ios/RouaTrading
-          mkdir -p build_output
-          xcodebuild build \
+          set -o pipefail
+          xcodebuild archive \
             -project RouaTrading.xcodeproj \
             -scheme RouaTrading \
             -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build_output/DerivedData \
+            -destination "generic/platform=iOS" \
+            -archivePath build/RouaTrading.xcarchive \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -59,21 +58,48 @@ workflows:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             SKIP_INSTALL=NO \
-            2>&1 | tail -50
+            INSTALL_PATH=/Applications \
+            | xcpretty || true
+          
+          echo "=== Archive contents ==="
+          find build/RouaTrading.xcarchive -name "*.app" 2>/dev/null
+          ls -la build/RouaTrading.xcarchive/Products/Applications/ 2>/dev/null || echo "No Applications dir"
 
       - name: Create IPA
         script: |
-          APP_PATH=$(find ios/RouaTrading/build_output/DerivedData -name "*.app" -path "*/Release-iphoneos/*" 2>/dev/null | head -1)
+          # Find the .app from the archive
+          APP_PATH=$(find ios/RouaTrading/build/RouaTrading.xcarchive/Products/Applications -name "*.app" 2>/dev/null | head -1)
+          
           if [ -z "$APP_PATH" ]; then
-            echo "Searching broader..."
-            APP_PATH=$(find ios/RouaTrading/build_output -name "*.app" 2>/dev/null | head -1)
+            echo "No .app in archive, searching DerivedData..."
+            APP_PATH=$(find ios/RouaTrading/build -name "*.app" 2>/dev/null | head -1)
           fi
+          
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found"
+            echo "ERROR: No .app bundle found!"
+            echo "=== Searching entire project ==="
             find . -name "*.app" 2>/dev/null
+            echo "=== Archive structure ==="
+            find ios/RouaTrading/build -type f 2>/dev/null | head -30
             exit 1
           fi
-          echo "Found: $APP_PATH"
+          
+          echo "Found app: $APP_PATH"
+          echo "App contents:"
+          ls -la "$APP_PATH/" | head -20
+          
+          # Verify the app has an executable
+          APP_NAME=$(basename "$APP_PATH" .app)
+          if [ ! -f "$APP_PATH/$APP_NAME" ]; then
+            echo "ERROR: No executable found in .app bundle at $APP_PATH/$APP_NAME"
+            echo "App bundle contents:"
+            find "$APP_PATH" -type f 2>/dev/null
+            exit 1
+          fi
+          
+          echo "Executable found: $APP_PATH/$APP_NAME"
+          echo "Executable size: $(du -h "$APP_PATH/$APP_NAME" | cut -f1)"
+          
           mkdir -p ipa_output/Payload
           cp -r "$APP_PATH" ipa_output/Payload/
           cd ipa_output

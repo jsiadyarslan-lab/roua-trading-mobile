@@ -2,7 +2,7 @@ workflows:
   build-ipa:
     name: Build Unsigned IPA
     environment:
-      xcode: 15.2
+      xcode: 16.0
       vars:
         XCODE_PROJECT: "ios/RouaTrading/RouaTrading.xcodeproj"
         XCODE_SCHEME: "RouaTrading"

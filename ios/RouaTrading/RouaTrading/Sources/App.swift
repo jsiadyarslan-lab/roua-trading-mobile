@@ -469,8 +469,10 @@ class AuthManager: ObservableObject {
                     }
                     continuation.resume(returning: callbackURL)
                 }
-                session.prefersEphemeralWebBrowserSession = false
-                session.start()
+                MainActor.assumeIsolated {
+                    session.prefersEphemeralWebBrowserSession = false
+                    session.start()
+                }
             }
             // Extract session token from callback if present
             if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
@@ -519,11 +521,12 @@ class AuthManager: ObservableObject {
             }
             let controller = ASAuthorizationController(authorizationRequests: [passkeyRequest])
             let authResult: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
-                let delegate = PasskeyAuthDelegate(continuation: continuation)
-                controller.delegate = delegate
-                // Retain delegate via associated object
-                PasskeyDelegateRetainer.retain(delegate, for: controller)
-                controller.performRequests()
+                MainActor.assumeIsolated {
+                    let delegate = PasskeyAuthDelegate(continuation: continuation)
+                    controller.delegate = delegate
+                    PasskeyDelegateRetainer.retain(delegate, for: controller)
+                    controller.performRequests()
+                }
             }
             guard let assertion = authResult.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential type"])
@@ -638,6 +641,7 @@ class AuthManager: ObservableObject {
 
 // MARK: - Passkey Helper Classes
 
+@MainActor
 private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     let continuation: CheckedContinuation<ASAuthorization, Error>
     init(continuation: CheckedContinuation<ASAuthorization, Error>) { self.continuation = continuation }

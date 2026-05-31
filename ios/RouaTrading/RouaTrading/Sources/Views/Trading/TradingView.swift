@@ -57,6 +57,7 @@ struct TradingView: View {
                 liveCandle: wsManager.lastCandle,
                 onTimeframeChange: { tf in
                     selectedTimeframe = tf
+                    vm.selectedTimeframe = tf  // Update ViewModel's timeframe so loadHistoricalCandles uses it
                     wsManager.connect(symbol: vm.symbol, interval: tf)
                     Task { await vm.loadHistoricalCandles() }
                 },

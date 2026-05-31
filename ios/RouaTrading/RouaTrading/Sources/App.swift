@@ -1,6 +1,6 @@
 import SwiftUI
-import KeychainAccess
-import SocketIO
+@preconcurrency import KeychainAccess
+@preconcurrency import SocketIO
 
 // MARK: - ═══════════════════════════════════════
 // MARK: - APP ENTRY
@@ -143,7 +143,7 @@ struct HeatmapItem: Codable, Identifiable {
     let change: Double; let volume: Double?
 }
 
-struct AIAnalyzeRequest: Codable { let prompt: String; let type: String?; let symbol: String?; let language: String? }
+struct AIAnalyzeRequest: Codable { let prompt: String; let analysisType: String?; let analysisSymbol: String?; let language: String?; enum CodingKeys: String, CodingKey { case prompt; case analysisType = "type"; case analysisSymbol = "symbol"; case language } }
 struct AIAnalyzeResponse: Codable { let analysis: String; let model: String?; let provider: String? }
 
 struct ExchangeCredential: Codable, Identifiable {
@@ -392,7 +392,7 @@ class AIViewModel: ObservableObject {
         inputText = ""
         await MainActor.run { messages.append((content: text, isUser: true, model: nil)); isLoading = true }
         do {
-            let request = AIAnalyzeRequest(prompt: text, language: "ar")
+            let request = AIAnalyzeRequest(prompt: text, analysisType: nil, analysisSymbol: nil, language: "ar")
             let response: AIAnalyzeResponse = try await api.request("/ai/analyze", method: "POST", body: request)
             await MainActor.run { messages.append((content: response.analysis, isUser: false, model: response.model)); isLoading = false }
         } catch {

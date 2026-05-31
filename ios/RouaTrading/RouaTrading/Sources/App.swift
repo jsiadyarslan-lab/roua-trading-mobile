@@ -438,6 +438,7 @@ class AuthManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var otpSent = false
     private let api = APIClient.shared
+    private var webAuthSession: ASWebAuthenticationSession?
     
     func checkExistingSession() {
         guard let _ = KeychainManager.shared.get(key: "roua_session") else { return }
@@ -452,46 +453,50 @@ class AuthManager: ObservableObject {
         } catch { self.isAuthenticated = false }
     }
     
-    func signInWithGoogle() async {
+    func signInWithGoogle() {
         isGoogleLoading = true; errorMessage = nil
         let googleAuthURL = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google")!
-        let callbackScheme = "roua"
-        do {
-            let callbackURL = try await Self._googleAuth(url: googleAuthURL, scheme: callbackScheme)
-            // Extract session token from callback if present
-            if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-               let tokenItem = components.queryItems?.first(where: { $0.name == "token" || $0.name == "session" })?.value {
-                APIClient.shared.sessionToken = tokenItem
-            }
-            let response: AuthVerifyResponse = try await api.request("/auth/me")
-            if response.success, let user = response.user {
-                self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
-            } else {
-                self.errorMessage = "Google login failed - no session"; self.isGoogleLoading = false
-            }
-        } catch {
-            self.errorMessage = "Google login failed: \(error.localizedDescription)"; self.isGoogleLoading = false
-        }
-    }
-    
-    private nonisolated static func _googleAuth(url: URL, scheme: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callbackURL, error in
-                if let error = error { continuation.resume(throwing: error); return }
-                guard let callbackURL = callbackURL else {
-                    continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
+        
+        let session = ASWebAuthenticationSession(url: googleAuthURL, callbackURLScheme: "roua") { [weak self] callbackURL, error in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if let error = error {
+                    self.errorMessage = "Google login failed: \(error.localizedDescription)"
+                    self.isGoogleLoading = false; self.webAuthSession = nil
                     return
                 }
-                continuation.resume(returning: callbackURL)
+                guard let callbackURL = callbackURL else {
+                    self.errorMessage = "No callback URL received"
+                    self.isGoogleLoading = false; self.webAuthSession = nil
+                    return
+                }
+                // Extract session token from callback URL
+                if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+                   let tokenItem = components.queryItems?.first(where: { $0.name == "token" || $0.name == "session" })?.value {
+                    APIClient.shared.sessionToken = tokenItem
+                }
+                self.webAuthSession = nil
+                // Verify the session with backend
+                do {
+                    let response: AuthVerifyResponse = try await self.api.request("/auth/me")
+                    if response.success, let user = response.user {
+                        self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
+                    } else {
+                        self.errorMessage = "Google login failed - could not verify session"; self.isGoogleLoading = false
+                    }
+                } catch {
+                    self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isGoogleLoading = false
+                }
             }
-            session.prefersEphemeralWebBrowserSession = false
-            session.start()
         }
-    }
-    
-    func signInWithGoogleSafari() {
-        guard let url = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google") else { return }
-        UIApplication.shared.open(url)
+        session.prefersEphemeralWebBrowserSession = false
+        // Provide presentation context so the browser opens WITHIN the app (not leaving it)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first {
+            session.presentationContextProvider = WebAuthPresenter(window: window)
+        }
+        self.webAuthSession = session  // Retain session so it doesn't get deallocated
+        session.start()
     }
     
     func signInWithPasskey() async {
@@ -651,6 +656,13 @@ private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         continuation.resume(throwing: error)
     }
+}
+
+/// Provides the UIWindow for ASWebAuthenticationSession to present the browser WITHIN the app
+private class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
+    let window: UIWindow
+    init(window: UIWindow) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
 }
 
 // MARK: - ═══════════════════════════════════════
@@ -1317,7 +1329,7 @@ struct AuthView: View {
     private var googleSignInView: some View {
         VStack(spacing: RouaTheme.Spacing.lg) {
             Button {
-                authManager.signInWithGoogleSafari()
+                authManager.signInWithGoogle()
             } label: {
                 HStack(spacing: 12) {
                     if authManager.isGoogleLoading {

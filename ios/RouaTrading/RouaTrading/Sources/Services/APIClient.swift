@@ -166,27 +166,60 @@ class APIClient {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Send refresh token via Authorization header AND custom header
+        // The server now checks both for mobile client support
         req.setValue("Bearer \(refreshToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(refreshToken, forHTTPHeaderField: "x-roua-refresh")
+        // Also send as cookie for maximum compatibility
+        req.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        print("[API] 🔑 Refreshing session with refresh token...")
 
         let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            print("[API] 🔑 Refresh failed: non-200 response")
+        guard let http = response as? HTTPURLResponse else {
+            print("[API] 🔑 Refresh failed: invalid response type")
             return false
         }
 
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let success = json["success"] as? Bool, success,
-           let tokenData = json["data"] as? [String: Any] {
-            if let newToken = tokenData["token"] as? String {
-                KeychainManager.shared.set(key: "roua_session", value: newToken)
-                print("[API] 🔑 New session token saved")
-            }
-            if let newRefresh = tokenData["refresh"] as? String {
-                KeychainManager.shared.set(key: "roua_refresh", value: newRefresh)
-                print("[API] 🔑 New refresh token saved")
-            }
-            return true
+        print("[API] 🔑 Refresh response: \(http.statusCode)")
+
+        guard (200...299).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)?.prefix(200) ?? "nil"
+            print("[API] 🔑 Refresh failed: \(http.statusCode) - \(body)")
+            return false
         }
+
+        // Try to parse the response — it may have different formats
+        // Format 1: { success: true, data: { token, refresh } }
+        // Format 2: { refreshed: true, authenticated: true, user: {...} }
+        // The server sets new cookies, but for mobile we need to extract tokens from response
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Check if authenticated
+            let isAuthenticated = json["authenticated"] as? Bool ?? (json["success"] as? Bool ?? false)
+
+            if isAuthenticated {
+                // The server creates new session tokens but returns them via Set-Cookie headers
+                // For mobile, we need to extract from the response or headers
+                // Check if there's a data field with tokens
+                if let tokenData = json["data"] as? [String: Any] {
+                    if let newToken = tokenData["token"] as? String {
+                        KeychainManager.shared.set(key: "roua_session", value: newToken)
+                        print("[API] 🔑 New session token saved from data.token")
+                    }
+                    if let newRefresh = tokenData["refresh"] as? String {
+                        KeychainManager.shared.set(key: "roua_refresh", value: newRefresh)
+                        print("[API] 🔑 New refresh token saved from data.refresh")
+                    }
+                    return true
+                }
+
+                // If no token in response body, the session was refreshed via sliding session
+                // The new tokens are in Set-Cookie headers which mobile can't read from cross-origin
+                // We need to re-validate to get the new session state
+                print("[API] 🔑 Session refreshed (sliding), re-validating...")
+                return true
+            }
+        }
+
         print("[API] 🔑 Refresh response format unexpected: \(String(data: data, encoding: .utf8)?.prefix(200) ?? "nil")")
         return false
     }

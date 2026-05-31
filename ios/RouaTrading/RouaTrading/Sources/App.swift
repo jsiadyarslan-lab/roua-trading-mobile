@@ -1,6 +1,6 @@
 import SwiftUI
-@preconcurrency import KeychainAccess
-@preconcurrency import SocketIO
+import Security
+import Foundation
 
 // MARK: - ═══════════════════════════════════════
 // MARK: - APP ENTRY
@@ -262,12 +262,52 @@ class APIClient {
 
 class KeychainManager {
     static let shared = KeychainManager()
-    private let keychain = KeychainAccess.Keychain(service: "com.roua.trading")
+    private let service = "com.roua.trading"
     private init() {}
-    func set(key: String, value: String) { keychain[key] = value }
-    func get(key: String) -> String? { keychain[key] }
-    func delete(key: String) { try? keychain.remove(key) }
-    func deleteAll() { try? keychain.removeAll() }
+
+    func set(key: String, value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    func get(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    func deleteAll() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
 }
 
 // MARK: - ═══════════════════════════════════════

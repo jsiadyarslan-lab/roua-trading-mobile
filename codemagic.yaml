@@ -21,7 +21,7 @@ workflows:
       - name: Generate Xcode Project
         script: |
           cd ios/RouaTrading
-          # Write a clean project.yml for unsigned builds (no code signing, Swift 5.9 compatible)
+          # Write a clean project.yml — NO SPM dependencies, native Keychain via Security framework
           cat > project.yml << 'EOF'
           name: RouaTrading
           options:
@@ -71,37 +71,17 @@ workflows:
                     CODE_SIGN_IDENTITY: ""
                     CODE_SIGNING_REQUIRED: "NO"
                     SWIFT_OPTIMIZATION_LEVEL: "-O"
-              dependencies:
-                - package: socket.io-client-swift
-                  product: SocketIO
-                - package: KeychainAccess
-                  product: KeychainAccess
-
-          packages:
-            socket.io-client-swift:
-              url: https://github.com/socketio/socket.io-client-swift
-              from: "16.1.0"
-            KeychainAccess:
-              url: https://github.com/kishikawakatsumi/KeychainAccess
-              from: "4.2.2"
           EOF
 
-          # Remove old xcodeproj to force regeneration
+          # Remove old xcodeproj and Package.swift to force clean regeneration
           rm -rf RouaTrading.xcodeproj
+          rm -f Package.swift
 
           xcodegen generate
           echo "Generated project:"
           ls -la *.xcodeproj
           echo "Available schemes:"
           xcodebuild -project RouaTrading.xcodeproj -list
-
-      - name: Resolve SPM Dependencies
-        script: |
-          cd ios/RouaTrading
-          xcodebuild -project RouaTrading.xcodeproj \
-            -scheme RouaTrading \
-            -resolvePackageDependencies \
-            -clonedSourcePackagesDirPath SourcePackages
 
       - name: Build (unsigned)
         script: |
@@ -112,7 +92,6 @@ workflows:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath build/RouaTrading.xcarchive \
-            -clonedSourcePackagesDirPath SourcePackages \
             COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -130,7 +109,7 @@ workflows:
         script: |
           APP_PATH=$(find ios/RouaTrading/build/RouaTrading.xcarchive/Products/Applications -name "*.app" 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "No .app in archive Applications. Searching DerivedData..."
+            echo "No .app in archive Applications. Searching..."
             APP_PATH=$(find ios/RouaTrading/build -name "*.app" 2>/dev/null | head -1)
           fi
           if [ -z "$APP_PATH" ]; then
@@ -138,8 +117,8 @@ workflows:
             echo "Build artifacts:"
             find ios/RouaTrading/build -type f 2>/dev/null | head -30
             echo "---"
-            echo "Build log (last 100 lines):"
-            tail -100 ios/RouaTrading/build.log 2>/dev/null
+            echo "Build log errors:"
+            rg "error:" ios/RouaTrading/build.log 2>/dev/null || tail -100 ios/RouaTrading/build.log 2>/dev/null
             exit 1
           fi
           echo "Found .app: $APP_PATH"

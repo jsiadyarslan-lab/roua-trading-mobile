@@ -2,7 +2,6 @@ import SwiftUI
 import Security
 import Foundation
 import AuthenticationServices
-import SafariServices
 
 // MARK: - ═══════════════════════════════════════
 // MARK: - APP ENTRY
@@ -314,7 +313,7 @@ enum APIError: LocalizedError {
 // MARK: - API CLIENT
 // MARK: - ═══════════════════════════════════════
 
-class APIClient {
+class APIClient: @unchecked Sendable {
     static let shared = APIClient()
     private let session: URLSession
     private let decoder = JSONDecoder()
@@ -339,7 +338,7 @@ class APIClient {
         return try! JSONEncoder().encode(innerData)
     }
     
-    func request<T: Codable>(_ path: String, method: String = "GET", body: Encodable? = nil) async throws -> T {
+    func request<T: Codable>(_ path: String, method: String = "GET", bodyData: Data? = nil) async throws -> T {
         let url = URL(string: "\(APIConfig.baseURL)\(path)")!
         var req = URLRequest(url: url)
         req.httpMethod = method
@@ -348,7 +347,7 @@ class APIClient {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             req.setValue(token, forHTTPHeaderField: APIConfig.sessionHeader)
         }
-        if let body { req.httpBody = try JSONEncoder().encode(body) }
+        if let bodyData { req.httpBody = bodyData }
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw APIError.networkError("Invalid response") }
         guard http.statusCode != 401 else { throw APIError.unauthorized }
@@ -364,8 +363,12 @@ class APIClient {
     }
 }
 
-// MARK: - ═══════════════════════════════════════
-// MARK: - KEYCHAIN
+// MARK: - Encoding Helper
+extension APIClient {
+    func request<T: Codable, B: Encodable>(_ path: String, method: String = "GET", body: B) async throws -> T {
+        return try await request(path, method: method, bodyData: try JSONEncoder().encode(body))
+    }
+}
 // MARK: - ═══════════════════════════════════════
 
 class KeychainManager {
@@ -422,6 +425,7 @@ class KeychainManager {
 // MARK: - AUTH MANAGER
 // MARK: - ═══════════════════════════════════════
 
+@MainActor
 class AuthManager: ObservableObject {
     static let shared = AuthManager()
     @Published var isAuthenticated = false
@@ -443,44 +447,44 @@ class AuthManager: ObservableObject {
     func validateSession() async {
         do {
             let response: AuthVerifyResponse = try await api.request("/auth/me")
-            await MainActor.run {
-                if response.success, let user = response.user { self.currentUser = user; self.isAuthenticated = true }
-                else { self.isAuthenticated = false }
-            }
-        } catch { await MainActor.run { self.isAuthenticated = false } }
+            if response.success, let user = response.user { self.currentUser = user; self.isAuthenticated = true }
+            else { self.isAuthenticated = false }
+        } catch { self.isAuthenticated = false }
     }
     
     func signInWithGoogle() async {
-        await MainActor.run { isGoogleLoading = true; errorMessage = nil }
-        let baseURL = "https://roua-trading-production.up.railway.app"
-        let googleAuthURL = URL(string: "\(baseURL)/api/auth/signin/google")!
+        isGoogleLoading = true; errorMessage = nil
+        let googleAuthURL = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google")!
         let callbackScheme = "roua"
         do {
-            let _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-                Task { @MainActor in
-                    let session = ASWebAuthenticationSession(
-                        url: googleAuthURL,
-                        callbackURLScheme: callbackScheme
-                    ) { callbackURL, error in
-                        if let error = error { continuation.resume(throwing: error); return }
-                        guard let callbackURL = callbackURL else {
-                            continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
-                            return
-                        }
-                        continuation.resume(returning: callbackURL)
+            let callbackURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                let session = ASWebAuthenticationSession(
+                    url: googleAuthURL,
+                    callbackURLScheme: callbackScheme
+                ) { callbackURL, error in
+                    if let error = error { continuation.resume(throwing: error); return }
+                    guard let callbackURL = callbackURL else {
+                        continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
+                        return
                     }
-                    session.prefersEphemeralWebBrowserSession = false
-                    session.start()
+                    continuation.resume(returning: callbackURL)
                 }
+                session.prefersEphemeralWebBrowserSession = false
+                session.start()
+            }
+            // Extract session token from callback if present
+            if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+               let tokenItem = components.queryItems?.first(where: { $0.name == "token" || $0.name == "session" })?.value {
+                APIClient.shared.sessionToken = tokenItem
             }
             let response: AuthVerifyResponse = try await api.request("/auth/me")
             if response.success, let user = response.user {
-                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false }
+                self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
             } else {
-                await MainActor.run { self.errorMessage = "Google login failed - no session"; self.isGoogleLoading = false }
+                self.errorMessage = "Google login failed - no session"; self.isGoogleLoading = false
             }
         } catch {
-            await MainActor.run { self.errorMessage = "Google login failed: \(error.localizedDescription)"; self.isGoogleLoading = false }
+            self.errorMessage = "Google login failed: \(error.localizedDescription)"; self.isGoogleLoading = false
         }
     }
     
@@ -490,7 +494,7 @@ class AuthManager: ObservableObject {
     }
     
     func signInWithPasskey() async {
-        await MainActor.run { isPasskeyLoading = true; errorMessage = nil }
+        isPasskeyLoading = true; errorMessage = nil
         do {
             let challengeURL = URL(string: "\(APIConfig.baseURL)/auth/challenge?email=passkey@roua.auto")!
             var challengeRequest = URLRequest(url: challengeURL)
@@ -507,20 +511,19 @@ class AuthManager: ObservableObject {
             let challengeResp = try JSONDecoder().decode(ChallengeResponse.self, from: challengeData)
             let challengeDataBytes = Data(base64Encoded: challengeResp.challenge) ?? Data(challengeResp.challenge.utf8)
             let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: challengeResp.rpId ?? "roua-trading-production.up.railway.app")
-            let request = provider.createCredentialAssertionRequest(challenge: challengeDataBytes)
+            let passkeyRequest = provider.createCredentialAssertionRequest(challenge: challengeDataBytes)
             if let allowCreds = challengeResp.allowCredentials {
-                request.allowedCredentials = allowCreds.map { cred in
+                passkeyRequest.allowedCredentials = allowCreds.map { cred in
                     ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8), transports: nil)
                 }
             }
-            let controller = ASAuthorizationController(authorizationRequests: [request])
+            let controller = ASAuthorizationController(authorizationRequests: [passkeyRequest])
             let authResult: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
-                Task { @MainActor in
-                    let delegate = PasskeyAuthDelegate(continuation: continuation)
-                    controller.delegate = delegate
-                    controller.performRequests()
-                    objc_setAssociatedObject(controller, "passkeyDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
-                }
+                let delegate = PasskeyAuthDelegate(continuation: continuation)
+                controller.delegate = delegate
+                // Retain delegate via associated object
+                PasskeyDelegateRetainer.retain(delegate, for: controller)
+                controller.performRequests()
             }
             guard let assertion = authResult.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential type"])
@@ -549,17 +552,17 @@ class AuthManager: ObservableObject {
             }
             let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
             if meResponse.success, let user = meResponse.user {
-                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isPasskeyLoading = false }
+                self.currentUser = user; self.isAuthenticated = true; self.isPasskeyLoading = false
             } else {
-                await MainActor.run { self.errorMessage = "Passkey login failed"; self.isPasskeyLoading = false }
+                self.errorMessage = "Passkey login failed"; self.isPasskeyLoading = false
             }
         } catch {
-            await MainActor.run { self.errorMessage = "Passkey failed: \(error.localizedDescription)"; self.isPasskeyLoading = false }
+            self.errorMessage = "Passkey failed: \(error.localizedDescription)"; self.isPasskeyLoading = false
         }
     }
     
     func sendOTP(email: String) async {
-        await MainActor.run { isOTPLoading = true; errorMessage = nil }
+        isOTPLoading = true; errorMessage = nil
         do {
             var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/otp/send")!)
             request.httpMethod = "POST"
@@ -569,14 +572,14 @@ class AuthManager: ObservableObject {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to send OTP"])
             }
-            await MainActor.run { self.otpSent = true; self.isOTPLoading = false }
+            self.otpSent = true; self.isOTPLoading = false
         } catch {
-            await MainActor.run { self.errorMessage = "Failed to send code: \(error.localizedDescription)"; self.isOTPLoading = false }
+            self.errorMessage = "Failed to send code: \(error.localizedDescription)"; self.isOTPLoading = false
         }
     }
     
     func verifyOTP(email: String, code: String) async {
-        await MainActor.run { isOTPLoading = true; errorMessage = nil }
+        isOTPLoading = true; errorMessage = nil
         do {
             var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/otp/verify")!)
             request.httpMethod = "POST"
@@ -591,20 +594,20 @@ class AuthManager: ObservableObject {
             if otpResp?.authenticated == true || otpResp?.success == true {
                 let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
                 if meResponse.success, let user = meResponse.user {
-                    await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false }
+                    self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false
                 } else {
-                    await MainActor.run { self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false }
+                    self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false
                 }
             } else {
-                await MainActor.run { self.errorMessage = "Invalid verification code"; self.isOTPLoading = false }
+                self.errorMessage = "Invalid verification code"; self.isOTPLoading = false
             }
         } catch {
-            await MainActor.run { self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isOTPLoading = false }
+            self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isOTPLoading = false
         }
     }
     
     func login(email: String) async {
-        await MainActor.run { isLoading = true; errorMessage = nil }
+        isLoading = true; errorMessage = nil
         do {
             var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/me")!)
             request.httpMethod = "POST"
@@ -617,25 +620,24 @@ class AuthManager: ObservableObject {
             struct MeResponse: Codable { let authenticated: Bool?; let success: Bool?; let user: AuthUser? }
             let meResp = try? JSONDecoder().decode(MeResponse.self, from: data)
             if meResp?.authenticated == true || meResp?.success == true, let user = meResp?.user {
-                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isLoading = false }
+                self.currentUser = user; self.isAuthenticated = true; self.isLoading = false
             } else {
-                await MainActor.run { self.errorMessage = "Login failed - try Google or OTP instead"; self.isLoading = false }
+                self.errorMessage = "Login failed - try Google or OTP instead"; self.isLoading = false
             }
         } catch {
-            await MainActor.run { self.errorMessage = error.localizedDescription; self.isLoading = false }
+            self.errorMessage = error.localizedDescription; self.isLoading = false
         }
     }
     
     func logout() async {
         do { let _: AuthVerifyResponse = try await api.request("/auth/session", method: "DELETE") } catch {}
-        await MainActor.run {
-            APIClient.shared.sessionToken = nil; KeychainManager.shared.deleteAll()
-            currentUser = nil; isAuthenticated = false; otpSent = false
-        }
+        APIClient.shared.sessionToken = nil; KeychainManager.shared.deleteAll()
+        currentUser = nil; isAuthenticated = false; otpSent = false
     }
 }
 
-// MARK: - Passkey ASAuthorizationController Delegate
+// MARK: - Passkey Helper Classes
+
 private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     let continuation: CheckedContinuation<ASAuthorization, Error>
     init(continuation: CheckedContinuation<ASAuthorization, Error>) { self.continuation = continuation }
@@ -644,6 +646,14 @@ private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     }
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         continuation.resume(throwing: error)
+    }
+}
+
+/// Helper to retain the passkey delegate via associated object with a proper pointer key
+private class PasskeyDelegateRetainer {
+    nonisolated(unsafe) static var delegateKey: UInt8 = 0
+    @MainActor static func retain(_ delegate: PasskeyAuthDelegate, for controller: ASAuthorizationController) {
+        objc_setAssociatedObject(controller, &delegateKey, delegate, .OBJC_ASSOCIATION_RETAIN)
     }
 }
 
@@ -909,7 +919,8 @@ class AgentViewModel: ObservableObject {
             "autoExecute": false
         ]
         do {
-            let _: ApiResponseWrapper = try await api.request("/agent/trader/settings", method: "PUT", body: AnyCodable(value: body))
+            let bodyData = try JSONSerialization.data(withJSONObject: body)
+            let _: ApiResponseWrapper = try await api.request("/agent/trader/settings", method: "PUT", bodyData: bodyData)
             await loadSettings()
         } catch { await MainActor.run { errorMessage = error.localizedDescription } }
     }
@@ -1061,7 +1072,7 @@ class CouncilViewModel: ObservableObject {
         await MainActor.run { isTriggering = true; errorMessage = nil }
         let body: [String: String] = triggerSymbol.isEmpty ? [:] : ["symbol": triggerSymbol]
         do {
-            let _: ApiResponseWrapper = try await api.request("/strategic-council/trigger", method: "POST", body: AnyCodable(value: body))
+            let _: ApiResponseWrapper = try await api.request("/strategic-council/trigger", method: "POST", body: body)
             await MainActor.run { isTriggering = false }; await loadActiveBriefs()
         } catch { await MainActor.run { errorMessage = error.localizedDescription; isTriggering = false } }
     }
@@ -1156,7 +1167,8 @@ class NotificationsViewModel: ObservableObject {
         if let v = signalAlerts { body["signalAlerts"] = v }
         if let v = newsAlerts { body["newsAlerts"] = v }
         do {
-            let _: ApiResponseWrapper = try await api.request("/notifications/preferences", method: "PUT", body: AnyCodable(value: body))
+            let bodyData = try JSONSerialization.data(withJSONObject: body)
+            let _: ApiResponseWrapper = try await api.request("/notifications/preferences", method: "PUT", bodyData: bodyData)
             await loadPreferences()
         } catch { await MainActor.run { errorMessage = error.localizedDescription } }
     }

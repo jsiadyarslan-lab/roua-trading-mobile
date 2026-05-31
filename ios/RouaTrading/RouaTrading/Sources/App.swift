@@ -536,24 +536,43 @@ class AuthManager: ObservableObject {
             }
         }
 
-        if let token = token, !token.isEmpty {
-            APIClient.shared.sessionToken = token
+        guard let token = token, !token.isEmpty else {
+            self.errorMessage = "فشل المصادقة: لم يتم استلام التوكن من Google"
+            self.isGoogleLoading = false
+            return
         }
 
-        // Verify the session with backend
+        // Store the token immediately
+        APIClient.shared.sessionToken = token
+
+        // Also store refresh token for future use
+        if let refreshToken = refreshToken, !refreshToken.isEmpty {
+            KeychainManager.shared.set(key: "roua_refresh", value: refreshToken)
+        }
+
+        // Verify the session with backend — retry up to 3 times with delay
+        // to handle race condition (session may not be committed to DB yet)
         Task {
-            do {
-                let response: AuthVerifyResponse = try await self.api.request("/auth/me")
-                if response.isValid, let user = response.user {
-                    self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
-                } else {
-                    self.errorMessage = "Google login failed - could not verify session"
-                    self.isGoogleLoading = false
+            var lastError: String?
+            for attempt in 1...3 {
+                do {
+                    if attempt > 1 {
+                        try await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000) // 0.5s, 1s delays
+                    }
+                    let response: AuthVerifyResponse = try await self.api.request("/auth/me")
+                    if response.isValid, let user = response.user {
+                        self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
+                        return
+                    } else {
+                        lastError = "فشل التحقق من الجلسة - محاولة \(attempt)/3"
+                    }
+                } catch {
+                    lastError = "خطأ التحقق: \(error.localizedDescription) - محاولة \(attempt)/3"
                 }
-            } catch {
-                self.errorMessage = "Verification failed: \(error.localizedDescription)"
-                self.isGoogleLoading = false
             }
+            // All retries failed
+            self.errorMessage = lastError ?? "فشل تسجيل الدخول بحساب Google"
+            self.isGoogleLoading = false
         }
     }
 
@@ -715,7 +734,7 @@ class AuthManager: ObservableObject {
     }
     
     func logout() async {
-        do { let _: AuthVerifyResponse = try await api.request("/auth/session", method: "DELETE") } catch {}
+        do { let _: AuthVerifyResponse = try await api.request("/auth/me", method: "DELETE") } catch {}
         APIClient.shared.sessionToken = nil; KeychainManager.shared.deleteAll()
         currentUser = nil; isAuthenticated = false; otpSent = false
     }

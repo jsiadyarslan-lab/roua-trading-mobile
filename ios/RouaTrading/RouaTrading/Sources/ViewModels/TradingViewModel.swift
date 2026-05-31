@@ -54,9 +54,14 @@ class TradingViewModel: ObservableObject {
         self.isLoading = false
     }
 
+    // URL-encode symbol for path segments (BTC/USDT → BTC%2FUSDT)
+    private var encodedSymbol: String {
+        symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+    }
+
     func loadQuote() async {
         do {
-            let quoteResponse: QuoteResponse = try await api.request("/exchange/quote/\(symbol)")
+            let quoteResponse: QuoteResponse = try await api.request("/exchange/quote/\(encodedSymbol)")
             self.currentQuote = quoteResponse.data
         } catch {
             print("[Trading] Quote load error: \(error)")
@@ -82,7 +87,7 @@ class TradingViewModel: ObservableObject {
         do {
             // Normalize timeframe for API: "1D" -> "1d", "1W" -> "1w"
             let apiInterval = selectedTimeframe.lowercased()
-            let response: CandleHistoryResponse = try await api.request("/exchange/history/\(symbol)?interval=\(apiInterval)&limit=500")
+            let response: CandleHistoryResponse = try await api.request("/exchange/history/\(encodedSymbol)?interval=\(apiInterval)&limit=500")
             let candles = response.data ?? []
             print("[Trading] Loaded \(candles.count) historical candles for \(symbol) @ \(apiInterval)")
             self.historicalCandles = candles

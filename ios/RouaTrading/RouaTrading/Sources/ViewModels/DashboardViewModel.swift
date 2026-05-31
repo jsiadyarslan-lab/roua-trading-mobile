@@ -35,7 +35,11 @@ class DashboardViewModel: ObservableObject {
             self.accountOverview = account
             self.positions = account.positions ?? []
         } catch {
-            // Auth may be required — don't crash
+            // Show auth error to user
+            if let apiError = error as? APIError, case .unauthorized = apiError {
+                self.errorMessage = "يرجى تسجيل الدخول لعرض بياناتك"
+                self.showError = true
+            }
             print("[Dashboard] Account data unavailable: \(error.localizedDescription)")
         }
 

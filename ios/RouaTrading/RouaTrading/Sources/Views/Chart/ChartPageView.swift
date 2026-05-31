@@ -79,7 +79,7 @@ struct ChartPageView: View {
             // Symbol Selector
             Button { showSymbolPicker = true } label: {
                 HStack(spacing: 4) {
-                    Text(vm.symbol.replacingOccurrences(of: "/USDT", with: "/USDT"))
+                    Text(vm.symbol)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(RouaTheme.Colors.textPrimary)
                     Image(systemName: "chevron.down")
@@ -90,11 +90,35 @@ struct ChartPageView: View {
 
             Spacer()
 
-            // Notifications bell
-            Button { } label: {
-                Image(systemName: "bell")
-                    .font(.system(size: 16))
-                    .foregroundStyle(RouaTheme.Colors.textTertiary)
+            // Buy / Sell buttons in nav bar
+            HStack(spacing: 6) {
+                Button {
+                    orderSide = "BUY"
+                    vm.orderSide = "BUY"
+                    showOrderSheet = true
+                } label: {
+                    Text("شراء")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(RouaTheme.Colors.profit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+
+                Button {
+                    orderSide = "SELL"
+                    vm.orderSide = "SELL"
+                    showOrderSheet = true
+                } label: {
+                    Text("بيع")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(RouaTheme.Colors.loss)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
             }
         }
         .padding(.horizontal, RouaTheme.Spacing.lg)
@@ -178,10 +202,10 @@ struct ChartPageView: View {
         .background(RouaTheme.Colors.background)
     }
 
-    // MARK: - Chart Overlay (symbol name + price + trade button)
+    // MARK: - Chart Overlay (price info only — no toolbar)
     private var chartOverlay: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            // Symbol name + price (top-right in RTL)
+            // Price info (top-right in RTL)
             HStack(spacing: 6) {
                 if wsManager.isConnected {
                     PulsingDot(color: RouaTheme.Colors.profit)
@@ -202,43 +226,6 @@ struct ChartPageView: View {
             }
             .padding(.horizontal, RouaTheme.Spacing.md)
             .padding(.top, RouaTheme.Spacing.sm)
-
-            // Collapsible Trade Button
-            VStack(spacing: 0) {
-                // Half Buy / Half Sell button
-                HStack(spacing: 0) {
-                    // Buy half (green)
-                    Button {
-                        orderSide = "BUY"
-                        vm.orderSide = "BUY"
-                        showOrderSheet = true
-                    } label: {
-                        Text("شراء")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 28)
-                            .background(RouaTheme.Colors.profit)
-                    }
-
-                    // Sell half (red)
-                    Button {
-                        orderSide = "SELL"
-                        vm.orderSide = "SELL"
-                        showOrderSheet = true
-                    } label: {
-                        Text("بيع")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 28)
-                            .background(RouaTheme.Colors.loss)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .frame(width: 100)
-                .padding(.horizontal, RouaTheme.Spacing.md)
-            }
 
             Spacer()
         }

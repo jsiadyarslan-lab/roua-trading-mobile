@@ -170,6 +170,14 @@ class ChartCoordinator {
                 close: live.close
             )
             candlestickData.append(liveItem)
+
+            // Add volume for live candle too
+            let liveVolItem = HistogramData(
+                time: time,
+                value: live.volume,
+                color: live.close >= live.open ? "rgba(0, 200, 83, 0.2)" : "rgba(255, 23, 68, 0.2)"
+            )
+            volumeData.append(liveVolItem)
         }
 
         candlestickSeries?.setData(data: candlestickData)

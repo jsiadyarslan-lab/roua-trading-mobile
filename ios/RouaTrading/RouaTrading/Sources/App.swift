@@ -23,6 +23,13 @@ struct RouaTradingApp: App {
             .tint(RouaTheme.Colors.accent)
             .preferredColorScheme(.dark)
             .onAppear { authManager.checkExistingSession() }
+            .onOpenURL { url in
+                // Fallback: handle roua:// URL callback for sideloaded apps
+                // where ASWebAuthenticationSession may not capture the redirect
+                if url.scheme == "roua" {
+                    authManager.handleGoogleCallback(url)
+                }
+            }
         }
     }
 }
@@ -439,6 +446,7 @@ class AuthManager: ObservableObject {
     @Published var otpSent = false
     private let api = APIClient.shared
     private var webAuthSession: ASWebAuthenticationSession?
+    private var webAuthPresenter: WebAuthPresenter?
     
     func checkExistingSession() {
         guard let _ = KeychainManager.shared.get(key: "roua_session") else { return }
@@ -455,48 +463,135 @@ class AuthManager: ObservableObject {
     
     func signInWithGoogle() {
         isGoogleLoading = true; errorMessage = nil
-        let googleAuthURL = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google")!
-        
+
+        // Build the Google auth URL with redirect_uri so the backend knows
+        // to redirect back to the app via the custom URL scheme
+        var components = URLComponents(string: "\(APIConfig.baseURL)/auth/signin/google")!
+        components.queryItems = [
+            URLQueryItem(name: "redirect_uri", value: "roua://auth/callback"),
+            URLQueryItem(name: "platform", value: "ios")
+        ]
+        guard let googleAuthURL = components.url else {
+            errorMessage = "Invalid Google auth URL"
+            isGoogleLoading = false
+            return
+        }
+
+        // IMPORTANT: ALWAYS set presentationContextProvider — without it on iOS 13+
+        // the session immediately cancels with error code 2 (canceledLogin)
+        let presenter = Self.findPresentationWindow()
+
         let session = ASWebAuthenticationSession(url: googleAuthURL, callbackURLScheme: "roua") { [weak self] callbackURL, error in
             Task { @MainActor in
                 guard let self = self else { return }
+                // Clean up retained references
+                self.webAuthSession = nil
+                self.webAuthPresenter = nil
+
                 if let error = error {
-                    self.errorMessage = "Google login failed: \(error.localizedDescription)"
-                    self.isGoogleLoading = false; self.webAuthSession = nil
+                    // ASWebAuthenticationSessionError.Code 2 = canceledLogin
+                    // This can happen if the user cancels, the session is invalidated,
+                    // or the presentationContextProvider was missing
+                    let nsError = error as NSError
+                    if nsError.domain == ASWebAuthenticationSessionErrorDomain && nsError.code == 2 {
+                        self.errorMessage = "Google login was cancelled"
+                    } else {
+                        self.errorMessage = "Google login failed: \(error.localizedDescription)"
+                    }
+                    self.isGoogleLoading = false
                     return
                 }
                 guard let callbackURL = callbackURL else {
                     self.errorMessage = "No callback URL received"
-                    self.isGoogleLoading = false; self.webAuthSession = nil
+                    self.isGoogleLoading = false
                     return
                 }
-                // Extract session token from callback URL
-                if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                   let tokenItem = components.queryItems?.first(where: { $0.name == "token" || $0.name == "session" })?.value {
-                    APIClient.shared.sessionToken = tokenItem
-                }
-                self.webAuthSession = nil
-                // Verify the session with backend
-                do {
-                    let response: AuthVerifyResponse = try await self.api.request("/auth/me")
-                    if response.success, let user = response.user {
-                        self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
-                    } else {
-                        self.errorMessage = "Google login failed - could not verify session"; self.isGoogleLoading = false
-                    }
-                } catch {
-                    self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isGoogleLoading = false
-                }
+                self.handleGoogleCallback(callbackURL)
             }
         }
         session.prefersEphemeralWebBrowserSession = false
-        // Provide presentation context so the browser opens WITHIN the app (not leaving it)
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = scene.windows.first {
-            session.presentationContextProvider = WebAuthPresenter(window: window)
-        }
-        self.webAuthSession = session  // Retain session so it doesn't get deallocated
+        session.presentationContextProvider = presenter
+
+        // Retain BOTH the session AND the presenter so they aren't deallocated
+        // before the callback fires
+        self.webAuthSession = session
+        self.webAuthPresenter = presenter
         session.start()
+    }
+
+    /// Called from ASWebAuthenticationSession callback OR .onOpenURL fallback
+    func handleGoogleCallback(_ url: URL) {
+        // Extract session token from callback URL in various formats:
+        // roua://auth/callback?token=xxx
+        // roua://auth/callback?session=xxx
+        // roua://auth/callback#token=xxx (fragment)
+        var token: String?
+
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            // Try query parameters first
+            token = components.queryItems?.first(where: { $0.name == "token" })?.value
+                ?? components.queryItems?.first(where: { $0.name == "session" })?.value
+                ?? components.queryItems?.first(where: { $0.name == "access_token" })?.value
+
+            // Try fragment (#token=xxx)
+            if token == nil, let fragment = components.fragment {
+                let fragParams = URLComponents(string: "http://temp.com?\(fragment)")?.queryItems
+                token = fragParams?.first(where: { $0.name == "token" })?.value
+                    ?? fragParams?.first(where: { $0.name == "session" })?.value
+                    ?? fragParams?.first(where: { $0.name == "access_token" })?.value
+            }
+        }
+
+        // Also try the full URL string as a last resort
+        if token == nil {
+            let urlString = url.absoluteString
+            if urlString.contains("token=") {
+                token = urlString.components(separatedBy: "token=").last?.components(separatedBy: "&").first
+            } else if urlString.contains("session=") {
+                token = urlString.components(separatedBy: "session=").last?.components(separatedBy: "&").first
+            }
+        }
+
+        if let token = token {
+            APIClient.shared.sessionToken = token
+        }
+
+        // Verify the session with backend
+        Task {
+            do {
+                let response: AuthVerifyResponse = try await self.api.request("/auth/me")
+                if response.success, let user = response.user {
+                    self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
+                } else {
+                    self.errorMessage = "Google login failed - could not verify session"; self.isGoogleLoading = false
+                }
+            } catch {
+                self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isGoogleLoading = false
+            }
+        }
+    }
+
+    /// Robustly find the current UIWindow for ASWebAuthenticationSession presentation.
+    /// This MUST always return a valid presenter — without it, the session
+    /// immediately cancels with error code 2 on iOS 13+.
+    private static func findPresentationWindow() -> WebAuthPresenter {
+        // 1. Try the foreground-active scene's key window
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+           let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first {
+            return WebAuthPresenter(window: window)
+        }
+        // 2. Fallback: any connected scene with a window
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first,
+           let window = scene.windows.first {
+            return WebAuthPresenter(window: window)
+        }
+        // 3. Last resort: create a temporary window (should never happen in practice)
+        let window = UIWindow()
+        return WebAuthPresenter(window: window)
     }
     
     func signInWithPasskey() async {

@@ -1,6 +1,8 @@
 import SwiftUI
 import Security
 import Foundation
+import AuthenticationServices
+import SafariServices
 
 // MARK: - ═══════════════════════════════════════
 // MARK: - APP ENTRY
@@ -321,7 +323,12 @@ class AuthManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: AuthUser?
     @Published var isLoading = false
+    @Published var isGoogleLoading = false
+    @Published var isPasskeyLoading = false
+    @Published var isOTPLoading = false
     @Published var error: APIError?
+    @Published var errorMessage: String?
+    @Published var otpSent = false
     private let api = APIClient.shared
     
     func checkExistingSession() {
@@ -331,7 +338,7 @@ class AuthManager: ObservableObject {
     
     func validateSession() async {
         do {
-            let response: AuthVerifyResponse = try await api.request("/auth/session")
+            let response: AuthVerifyResponse = try await api.request("/auth/me")
             await MainActor.run {
                 if response.success, let user = response.user { self.currentUser = user; self.isAuthenticated = true }
                 else { self.isAuthenticated = false }
@@ -339,14 +346,291 @@ class AuthManager: ObservableObject {
         } catch { await MainActor.run { self.isAuthenticated = false } }
     }
     
-    func login(email: String) async {
-        await MainActor.run { isLoading = true; error = nil }
+    // MARK: - Google Sign-In via ASWebAuthenticationSession
+    func signInWithGoogle() async {
+        await MainActor.run { isGoogleLoading = true; errorMessage = nil }
+        
+        let baseURL = "https://roua-trading-production.up.railway.app"
+        let googleAuthURL = URL(string: "\(baseURL)/api/auth/signin/google")!
+        let callbackScheme = "roua"
+        
         do {
-            let _: [String: String] = ["email": email]
-            let _: Data = try await api.request("/auth/challenge?email=\(email)")
-            await MainActor.run { isLoading = false }
+            let (url, _) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, ASWebAuthenticationSession.Callback?), Error>) in
+                Task { @MainActor in
+                    let session = ASWebAuthenticationSession(
+                        url: googleAuthURL,
+                        callbackURLScheme: callbackScheme
+                    ) { callbackURL, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        guard let callbackURL = callbackURL else {
+                            continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
+                            return
+                        }
+                        continuation.resume(returning: (callbackURL, nil))
+                    }
+                    session.prefersEphemeralWebBrowserSession = false
+                    session.start()
+                }
+            }
+            
+            // After Google OAuth, the browser redirects back. But since the backend
+            // uses cookie-based sessions, we need to extract the session from cookies.
+            // The backend sets a session cookie on callback.
+            // Alternative: use the /api/auth/me endpoint to check if we got a session.
+            let response: AuthVerifyResponse = try await api.request("/auth/me")
+            if response.success, let user = response.user {
+                await MainActor.run {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    self.isGoogleLoading = false
+                }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "Google login failed - no session"
+                    self.isGoogleLoading = false
+                }
+            }
         } catch {
-            await MainActor.run { self.error = error as? APIError; self.isLoading = false }
+            await MainActor.run {
+                self.errorMessage = "Google login failed: \(error.localizedDescription)"
+                self.isGoogleLoading = false
+            }
+        }
+    }
+    
+    // MARK: - Google Sign-In via SFSafariViewController (opens in-app Safari)
+    func signInWithGoogleSafari() {
+        guard let url = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google") else { return }
+        // We use the share sheet approach - open in Safari, user logs in, then comes back
+        UIApplication.shared.open(url)
+    }
+    
+    // MARK: - Passkey / WebAuthn Login
+    func signInWithPasskey() async {
+        await MainActor.run { isPasskeyLoading = true; errorMessage = nil }
+        
+        do {
+            // Step 1: Get challenge from backend
+            let challengeURL = URL(string: "\(APIConfig.baseURL)/auth/challenge?email=passkey@roua.auto")!
+            var challengeRequest = URLRequest(url: challengeURL)
+            challengeRequest.httpMethod = "GET"
+            if let token = APIClient.shared.sessionToken {
+                challengeRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                challengeRequest.setValue(token, forHTTPHeaderField: APIConfig.sessionHeader)
+            }
+            let (challengeData, challengeResponse) = try await URLSession.shared.data(for: challengeRequest)
+            guard let httpResp = challengeResponse as? HTTPURLResponse,
+                  (200...299).contains(httpResp.statusCode) else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get passkey challenge"])
+            }
+            
+            struct ChallengeResponse: Codable {
+                let challenge: String
+                let rpId: String?
+                let allowCredentials: [AllowCredential]?
+                struct AllowCredential: Codable {
+                    let id: String
+                    let type: String
+                }
+            }
+            let challengeResp = try JSONDecoder().decode(ChallengeResponse.self, from: challengeData)
+            
+            // Step 2: Use ASAuthorizationController for Passkey
+            let challengeDataBytes = Data(base64Encoded: challengeResp.challenge)
+                ?? Data(challengeResp.challenge.utf8)
+            
+            let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(
+                relyingPartyIdentifier: challengeResp.rpId ?? "roua-trading-production.up.railway.app"
+            )
+            
+            let request = provider.createCredentialAssertionRequest(challenge: challengeDataBytes)
+            
+            if let allowCreds = challengeResp.allowCredentials {
+                request.allowedCredentials = allowCreds.map { cred in
+                    ASAuthorizationPlatformPublicKeyCredentialDescriptor(
+                        credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8),
+                        transports: nil
+                    )
+                }
+            }
+            
+            let controller = ASAuthorizationController(authorizationRequests: [request])
+            
+            let authResult: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
+                Task { @MainActor in
+                    let delegate = PasskeyAuthDelegate(continuation: continuation)
+                    controller.delegate = delegate
+                    controller.performRequests()
+                    // Keep delegate alive
+                    objc_setAssociatedObject(controller, "passkeyDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+                }
+            }
+            
+            // Step 3: Send assertion to backend for verification
+            guard let assertion = authResult.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential type"])
+            }
+            
+            struct PasskeyVerifyRequest: Encodable {
+                let credential: PasskeyCredential
+                struct PasskeyCredential: Encodable {
+                    let id: String
+                    let rawId: String
+                    let response: PasskeyResponse
+                    let type: String
+                }
+                struct PasskeyResponse: Encodable {
+                    let authenticatorData: String
+                    let clientDataJSON: String
+                    let signature: String
+                    let userHandle: String?
+                }
+            }
+            
+            let verifyBody = PasskeyVerifyRequest(credential: PasskeyVerifyRequest.PasskeyCredential(
+                id: assertion.credentialID.base64EncodedString(),
+                rawId: assertion.credentialID.base64EncodedString(),
+                response: PasskeyVerifyRequest.PasskeyCredential.PasskeyResponse(
+                    authenticatorData: assertion.authenticatorData.base64EncodedString(),
+                    clientDataJSON: assertion.clientDataJSON.base64EncodedString(),
+                    signature: assertion.signature.base64EncodedString(),
+                    userHandle: assertion.userID?.base64EncodedString()
+                ),
+                type: "public-key"
+            ))
+            
+            var verifyRequest = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/passkey/verify")!)
+            verifyRequest.httpMethod = "POST"
+            verifyRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let token = APIClient.shared.sessionToken {
+                verifyRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                verifyRequest.setValue(token, forHTTPHeaderField: APIConfig.sessionHeader)
+            }
+            verifyRequest.httpBody = try JSONEncoder().encode(verifyBody)
+            
+            let (_, verifyResponse) = try await URLSession.shared.data(for: verifyRequest)
+            guard let verifyHTTP = verifyResponse as? HTTPURLResponse,
+                  (200...299).contains(verifyHTTP.statusCode) else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Passkey verification failed"])
+            }
+            
+            // Step 4: Validate session
+            let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
+            if meResponse.success, let user = meResponse.user {
+                await MainActor.run {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    self.isPasskeyLoading = false
+                }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "Passkey login failed"
+                    self.isPasskeyLoading = false
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Passkey failed: \(error.localizedDescription)"
+                self.isPasskeyLoading = false
+            }
+        }
+    }
+    
+    // MARK: - OTP Login
+    func sendOTP(email: String) async {
+        await MainActor.run { isOTPLoading = true; errorMessage = nil }
+        do {
+            var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/otp/send")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["email": email])
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to send OTP"])
+            }
+            await MainActor.run { self.otpSent = true; self.isOTPLoading = false }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Failed to send code: \(error.localizedDescription)"
+                self.isOTPLoading = false
+            }
+        }
+    }
+    
+    func verifyOTP(email: String, code: String) async {
+        await MainActor.run { isOTPLoading = true; errorMessage = nil }
+        do {
+            var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/otp/verify")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["email": email, "otp": code])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid code"])
+            }
+            // Check if authenticated
+            struct OTPVerifyResponse: Codable { let authenticated: Bool?; let success: Bool? }
+            let otpResp = try? JSONDecoder().decode(OTPVerifyResponse.self, from: data)
+            if otpResp?.authenticated == true || otpResp?.success == true {
+                // Session is now established via cookies, validate it
+                let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
+                if meResponse.success, let user = meResponse.user {
+                    await MainActor.run {
+                        self.currentUser = user
+                        self.isAuthenticated = true
+                        self.isOTPLoading = false
+                    }
+                } else {
+                    await MainActor.run {
+                        self.errorMessage = "Login failed - could not verify session"
+                        self.isOTPLoading = false
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "Invalid verification code"
+                    self.isOTPLoading = false
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Verification failed: \(error.localizedDescription)"
+                self.isOTPLoading = false
+            }
+        }
+    }
+    
+    // MARK: - Direct email login
+    func login(email: String) async {
+        await MainActor.run { isLoading = true; errorMessage = nil }
+        do {
+            var request = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/me")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(["email": email])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Login failed"])
+            }
+            struct MeResponse: Codable { let authenticated: Bool?; let success: Bool?; let user: AuthUser? }
+            let meResp = try? JSONDecoder().decode(MeResponse.self, from: data)
+            if meResp?.authenticated == true || meResp?.success == true, let user = meResp?.user {
+                await MainActor.run {
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    self.isLoading = false
+                }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "Login failed - try Google or OTP instead"
+                    self.isLoading = false
+                }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = error.localizedDescription; self.isLoading = false }
         }
     }
     
@@ -354,8 +638,20 @@ class AuthManager: ObservableObject {
         do { let _: AuthVerifyResponse = try await api.request("/auth/session", method: "DELETE") } catch {}
         await MainActor.run {
             APIClient.shared.sessionToken = nil; KeychainManager.shared.deleteAll()
-            currentUser = nil; isAuthenticated = false
+            currentUser = nil; isAuthenticated = false; otpSent = false
         }
+    }
+}
+
+// MARK: - Passkey ASAuthorizationController Delegate
+private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
+    let continuation: CheckedContinuation<ASAuthorization, Error>
+    init(continuation: CheckedContinuation<ASAuthorization, Error>) { self.continuation = continuation }
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        continuation.resume(returning: authorization)
+    }
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        continuation.resume(throwing: error)
     }
 }
 
@@ -544,15 +840,25 @@ struct ShimmerView: View {
 struct AuthView: View {
     @ObservedObject var authManager = AuthManager.shared
     @State private var email = ""
-    @State private var showRegistration = false
+    @State private var otpCode = ""
+    @State private var authMethod: AuthMethod = .google
+    
+    enum AuthMethod: String, CaseIterable {
+        case google = "Google"
+        case passkey = "Passkey"
+        case otp = "Email Code"
+    }
     
     var body: some View {
         ZStack {
             RouaTheme.Colors.background.ignoresSafeArea()
             Circle().fill(RouaTheme.Colors.accent.opacity(0.05)).frame(width: 400, height: 400).blur(radius: 80).offset(x: -100, y: -200)
+            Circle().fill(RouaTheme.Colors.accent.opacity(0.03)).frame(width: 300, height: 300).blur(radius: 60).offset(x: 150, y: 300)
             
-            VStack(spacing: RouaTheme.Spacing.xxl) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
                 Spacer()
+                
+                // Logo
                 VStack(spacing: RouaTheme.Spacing.lg) {
                     ZStack {
                         RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.xl).fill(RouaTheme.Colors.accentGradient).frame(width: 80, height: 80)
@@ -561,35 +867,142 @@ struct AuthView: View {
                     Text("ROUA TRADING").font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(RouaTheme.Colors.textPrimary).tracking(4)
                     Text("AI-Powered Trading Platform").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary)
                 }
+                
                 Spacer()
                 
-                VStack(spacing: RouaTheme.Spacing.lg) {
-                    HStack(spacing: RouaTheme.Spacing.md) {
-                        Image(systemName: "envelope").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
-                        TextField("Email Address", text: $email).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                            .tint(RouaTheme.Colors.accent).textInputAutocapitalization(.never).keyboardType(.emailAddress)
-                    }.padding(RouaTheme.Spacing.lg).background(RouaTheme.Colors.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                // Auth Method Picker
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        ForEach(AuthMethod.allCases, id: \.self) { method in
+                            Button {
+                                withAnimation { authMethod = method }
+                            } label: {
+                                Text(method.rawValue).font(.system(size: 13, weight: .semibold))
+                                    .frame(maxWidth: .infinity).frame(height: 44)
+                                    .foregroundStyle(authMethod == method ? .white : RouaTheme.Colors.textTertiary)
+                                    .background(authMethod == method ? RouaTheme.Colors.accent : RouaTheme.Colors.surfaceElevated)
+                            }
+                        }
+                    }.clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                    .padding(.bottom, RouaTheme.Spacing.lg)
                     
-                    TradingButton(title: showRegistration ? "Create Account" : "Sign In", style: .primary, isLoading: authManager.isLoading) {
-                        Task { await authManager.login(email: email) }
+                    // Auth Content
+                    Group {
+                        switch authMethod {
+                        case .google:
+                            googleSignInView
+                        case .passkey:
+                            passkeySignInView
+                        case .otp:
+                            otpSignInView
+                        }
                     }
-                    
-                    Button(showRegistration ? "Already have an account?" : "Create new account") {
-                        withAnimation { showRegistration.toggle() }
-                    }.font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.accentLight)
+                    .animation(.easeInOut(duration: 0.2), value: authMethod)
                 }
                 
-                if let error = authManager.error {
+                // Error Message
+                if let errorMessage = authManager.errorMessage {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RouaTheme.Colors.loss)
-                        Text(error.localizedDescription).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss)
+                        Text(errorMessage).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss)
                     }.padding(RouaTheme.Spacing.md).frame(maxWidth: .infinity).background(RouaTheme.Colors.lossBackground)
                     .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                 }
+                
                 Spacer()
-                Text("Secured with WebAuthn & Biometrics").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.shield.fill").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.profit)
+                    Text("Secured with WebAuthn & Biometrics").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                }
             }.padding(.horizontal, RouaTheme.Spacing.xl)
+        }
+    }
+    
+    // MARK: - Google Sign-In View
+    private var googleSignInView: some View {
+        VStack(spacing: RouaTheme.Spacing.lg) {
+            // Google Button
+            Button {
+                authManager.signInWithGoogleSafari()
+            } label: {
+                HStack(spacing: 12) {
+                    if authManager.isGoogleLoading {
+                        ProgressView().tint(.white).controlSize(.small)
+                    } else {
+                        // Google "G" SVG
+                        Image(systemName: "globe").font(.system(size: 18, weight: .bold)).foregroundStyle(RouaTheme.Colors.accentLight)
+                    }
+                    Text(authManager.isGoogleLoading ? "Connecting..." : "Sign in with Google")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(RouaTheme.Colors.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                .overlay(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md).stroke(RouaTheme.Colors.borderLight, lineWidth: 1))
+            }.disabled(authManager.isGoogleLoading)
+            
+            Text("Fast & secure - use your Google account").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
+        }
+    }
+    
+    // MARK: - Passkey Sign-In View
+    private var passkeySignInView: some View {
+        VStack(spacing: RouaTheme.Spacing.lg) {
+            Button {
+                Task { await authManager.signInWithPasskey() }
+            } label: {
+                HStack(spacing: 12) {
+                    if authManager.isPasskeyLoading {
+                        ProgressView().tint(.white).controlSize(.small)
+                    } else {
+                        Image(systemName: "key.fill").font(.system(size: 18)).foregroundStyle(RouaTheme.Colors.accentLight)
+                    }
+                    Text(authManager.isPasskeyLoading ? "Verifying..." : "Sign in with Passkey")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(RouaTheme.Colors.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                .overlay(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md).stroke(RouaTheme.Colors.borderLight, lineWidth: 1))
+            }.disabled(authManager.isPasskeyLoading)
+            
+            Text("Biometric authentication - no password needed").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
+        }
+    }
+    
+    // MARK: - OTP Sign-In View
+    private var otpSignInView: some View {
+        VStack(spacing: RouaTheme.Spacing.lg) {
+            // Email Field
+            HStack(spacing: RouaTheme.Spacing.md) {
+                Image(systemName: "envelope").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
+                TextField("Email Address", text: $email)
+                    .font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                    .tint(RouaTheme.Colors.accent).textInputAutocapitalization(.never).keyboardType(.emailAddress)
+            }.padding(RouaTheme.Spacing.lg).background(RouaTheme.Colors.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+            
+            if authManager.otpSent {
+                // OTP Code Field
+                HStack(spacing: RouaTheme.Spacing.md) {
+                    Image(systemName: "number.circle").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
+                    TextField("Verification Code", text: $otpCode)
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                        .tint(RouaTheme.Colors.accent).keyboardType(.numberPad)
+                }.padding(RouaTheme.Spacing.lg).background(RouaTheme.Colors.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                
+                TradingButton(title: "Verify Code", style: .primary, isLoading: authManager.isOTPLoading) {
+                    Task { await authManager.verifyOTP(email: email, code: otpCode) }
+                }
+            } else {
+                TradingButton(title: "Send Verification Code", style: .primary, isLoading: authManager.isOTPLoading) {
+                    Task { await authManager.sendOTP(email: email) }
+                }
+            }
+            
+            Text("We will send a code to your email").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
         }
     }
 }

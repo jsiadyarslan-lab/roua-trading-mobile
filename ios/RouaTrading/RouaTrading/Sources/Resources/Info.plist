@@ -46,5 +46,16 @@
     </array>
     <key>NSFaceIDUsageDescription</key>
     <string>Roua Trading uses Face ID for secure authentication</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.roua.trading</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>roua</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

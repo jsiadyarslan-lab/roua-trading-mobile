@@ -457,23 +457,7 @@ class AuthManager: ObservableObject {
         let googleAuthURL = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google")!
         let callbackScheme = "roua"
         do {
-            let callbackURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-                let session = ASWebAuthenticationSession(
-                    url: googleAuthURL,
-                    callbackURLScheme: callbackScheme
-                ) { callbackURL, error in
-                    if let error = error { continuation.resume(throwing: error); return }
-                    guard let callbackURL = callbackURL else {
-                        continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
-                        return
-                    }
-                    continuation.resume(returning: callbackURL)
-                }
-                MainActor.assumeIsolated {
-                    session.prefersEphemeralWebBrowserSession = false
-                    session.start()
-                }
-            }
+            let callbackURL = try await Self._googleAuth(url: googleAuthURL, scheme: callbackScheme)
             // Extract session token from callback if present
             if let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
                let tokenItem = components.queryItems?.first(where: { $0.name == "token" || $0.name == "session" })?.value {
@@ -487,6 +471,21 @@ class AuthManager: ObservableObject {
             }
         } catch {
             self.errorMessage = "Google login failed: \(error.localizedDescription)"; self.isGoogleLoading = false
+        }
+    }
+    
+    private nonisolated static func _googleAuth(url: URL, scheme: String) async throws -> URL {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callbackURL, error in
+                if let error = error { continuation.resume(throwing: error); return }
+                guard let callbackURL = callbackURL else {
+                    continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
+                    return
+                }
+                continuation.resume(returning: callbackURL)
+            }
+            session.prefersEphemeralWebBrowserSession = false
+            session.start()
         }
     }
     
@@ -520,14 +519,7 @@ class AuthManager: ObservableObject {
                 }
             }
             let controller = ASAuthorizationController(authorizationRequests: [passkeyRequest])
-            let authResult: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
-                MainActor.assumeIsolated {
-                    let delegate = PasskeyAuthDelegate(continuation: continuation)
-                    controller.delegate = delegate
-                    PasskeyDelegateRetainer.retain(delegate, for: controller)
-                    controller.performRequests()
-                }
-            }
+            let authResult: ASAuthorization = try await Self._passkeyAuth(controller: controller)
             guard let assertion = authResult.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential type"])
             }
@@ -561,6 +553,15 @@ class AuthManager: ObservableObject {
             }
         } catch {
             self.errorMessage = "Passkey failed: \(error.localizedDescription)"; self.isPasskeyLoading = false
+        }
+    }
+    
+    private nonisolated static func _passkeyAuth(controller: ASAuthorizationController) async throws -> ASAuthorization {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ASAuthorization, Error>) in
+            let delegate = PasskeyAuthDelegate(continuation: continuation)
+            controller.delegate = delegate
+            objc_setAssociatedObject(controller, Unmanaged.passUnretained(delegate).toOpaque(), delegate, .OBJC_ASSOCIATION_RETAIN)
+            controller.performRequests()
         }
     }
     
@@ -641,7 +642,6 @@ class AuthManager: ObservableObject {
 
 // MARK: - Passkey Helper Classes
 
-@MainActor
 private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     let continuation: CheckedContinuation<ASAuthorization, Error>
     init(continuation: CheckedContinuation<ASAuthorization, Error>) { self.continuation = continuation }
@@ -650,14 +650,6 @@ private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     }
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         continuation.resume(throwing: error)
-    }
-}
-
-/// Helper to retain the passkey delegate via associated object with a proper pointer key
-private class PasskeyDelegateRetainer {
-    nonisolated(unsafe) static var delegateKey: UInt8 = 0
-    @MainActor static func retain(_ delegate: PasskeyAuthDelegate, for controller: ASAuthorizationController) {
-        objc_setAssociatedObject(controller, &delegateKey, delegate, .OBJC_ASSOCIATION_RETAIN)
     }
 }
 

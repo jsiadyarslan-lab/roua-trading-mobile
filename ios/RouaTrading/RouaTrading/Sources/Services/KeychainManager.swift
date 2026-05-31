@@ -75,9 +75,9 @@ class KeychainManager {
         if let userId = userId { set(key: Key.userId.rawValue, value: userId) }
     }
 
-    var sessionToken: String? { get(key: Key.sessionToken.rawValue) }
-    var refreshToken: String? { get(key: Key.refreshToken.rawValue) }
-    var savedUserId: String? { get(key: Key.userId.rawValue) }
+    var sessionToken: String? { return get(key: Key.sessionToken.rawValue) }
+    var refreshToken: String? { return get(key: Key.refreshToken.rawValue) }
+    var savedUserId: String? { return get(key: Key.userId.rawValue) }
 
     func clearSession() {
         delete(key: Key.sessionToken.rawValue)

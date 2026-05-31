@@ -220,6 +220,13 @@ struct AIAnalyzeRequest: Codable {
     let type: String?
     let symbol: String?
     let language: String?
+
+    init(prompt: String, type: String? = nil, symbol: String? = nil, language: String? = nil) {
+        self.prompt = prompt
+        self.type = type
+        self.symbol = symbol
+        self.language = language
+    }
 }
 
 struct AIAnalyzeResponse: Codable {

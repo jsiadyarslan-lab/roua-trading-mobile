@@ -2,7 +2,6 @@ import SwiftUI
 import Security
 import Foundation
 import AuthenticationServices
-import WebKit
 
 // MARK: - ═══════════════════════════════════════
 // MARK: - APP ENTRY
@@ -440,7 +439,8 @@ class AuthManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var otpSent = false
     private let api = APIClient.shared
-    @Published var showGoogleAuthSheet = false
+    private var webAuthSession: ASWebAuthenticationSession?
+    private var webAuthPresenter: WebAuthPresenter?
     
     func checkExistingSession() {
         guard let _ = KeychainManager.shared.get(key: "roua_session") else { return }
@@ -457,52 +457,114 @@ class AuthManager: ObservableObject {
     
     func signInWithGoogle() {
         isGoogleLoading = true; errorMessage = nil
-        showGoogleAuthSheet = true
+
+        // Build the Google auth URL with app_redirect_uri parameter.
+        // The backend will redirect to roua://auth/callback?token=SESSION_TOKEN
+        // after successful Google auth, which ASWebAuthenticationSession captures.
+        var components = URLComponents(string: "\(APIConfig.baseURL)/auth/signin/google")!
+        components.queryItems = [
+            URLQueryItem(name: "app_redirect_uri", value: "roua://auth/callback")
+        ]
+        guard let googleAuthURL = components.url else {
+            errorMessage = "Invalid Google auth URL"
+            isGoogleLoading = false
+            return
+        }
+
+        // ALWAYS provide presentationContextProvider — without it on iOS 13+
+        // the session immediately cancels with error code 2 (canceledLogin)
+        let presenter = Self.findPresentationWindow()
+
+        let session = ASWebAuthenticationSession(url: googleAuthURL, callbackURLScheme: "roua") { [weak self] callbackURL, error in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.webAuthSession = nil
+                self.webAuthPresenter = nil
+
+                if let error = error {
+                    let nsError = error as NSError
+                    if nsError.domain == ASWebAuthenticationSessionErrorDomain && nsError.code == 2 {
+                        self.errorMessage = "Google login was cancelled"
+                    } else {
+                        self.errorMessage = "Google login failed: \(error.localizedDescription)"
+                    }
+                    self.isGoogleLoading = false
+                    return
+                }
+                guard let callbackURL = callbackURL else {
+                    self.errorMessage = "No callback URL received"
+                    self.isGoogleLoading = false
+                    return
+                }
+                self.handleGoogleCallback(callbackURL)
+            }
+        }
+        session.prefersEphemeralWebBrowserSession = false
+        session.presentationContextProvider = presenter
+
+        // Retain BOTH the session AND the presenter
+        self.webAuthSession = session
+        self.webAuthPresenter = presenter
+        session.start()
     }
 
-    /// Called by GoogleAuthWebView when session cookies are detected after Google login
-    func handleGoogleWebAuth(cookies: [HTTPCookie]) {
-        showGoogleAuthSheet = false
+    /// Process the roua://auth/callback?token=xxx URL from ASWebAuthenticationSession
+    func handleGoogleCallback(_ url: URL) {
+        // Extract session token from callback URL
+        // Backend sends: roua://auth/callback?token=SESSION_TOKEN&refresh=REFRESH_TOKEN&userId=USER_ID
+        var token: String?
+        var refreshToken: String?
 
-        // Try to find the session token from cookies
-        var sessionToken: String?
-        for cookie in cookies {
-            let name = cookie.name.lowercased()
-            if name.contains("session") || name.contains("token") || name == "roua-session" || name == "connect.sid" || name == "x-roua-session" {
-                sessionToken = cookie.value
-                break
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            token = components.queryItems?.first(where: { $0.name == "token" })?.value
+            refreshToken = components.queryItems?.first(where: { $0.name == "refresh" })?.value
+        }
+
+        // Fallback: try parsing from raw string
+        if token == nil {
+            let urlString = url.absoluteString
+            if urlString.contains("token=") {
+                token = urlString.components(separatedBy: "token=").last?.components(separatedBy: "&").first
             }
         }
 
-        if let token = sessionToken, !token.isEmpty {
+        if let token = token, !token.isEmpty {
             APIClient.shared.sessionToken = token
         }
 
-        // Verify the session with backend — even without an explicit token,
-        // the WKWebView may have established a server-side session that
-        // the API client can verify if we can find the cookie
+        // Verify the session with backend
         Task {
             do {
                 let response: AuthVerifyResponse = try await self.api.request("/auth/me")
                 if response.success, let user = response.user {
                     self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
                 } else {
-                    // If /auth/me failed, try extracting session from cookie differently
-                    self.errorMessage = "Google login failed - could not verify session. Try Email Code instead."
+                    self.errorMessage = "Google login failed - could not verify session"
                     self.isGoogleLoading = false
                 }
             } catch {
-                self.errorMessage = "Verification failed: \(error.localizedDescription). Try Email Code instead."
+                self.errorMessage = "Verification failed: \(error.localizedDescription)"
                 self.isGoogleLoading = false
             }
         }
     }
 
-    /// Called when user manually closes the Google auth WebView
-    func cancelGoogleAuth() {
-        showGoogleAuthSheet = false
-        isGoogleLoading = false
-        errorMessage = "Google login was cancelled"
+    /// Find the current UIWindow for ASWebAuthenticationSession presentation
+    private static func findPresentationWindow() -> WebAuthPresenter {
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+           let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first {
+            return WebAuthPresenter(window: window)
+        }
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first,
+           let window = scene.windows.first {
+            return WebAuthPresenter(window: window)
+        }
+        let window = UIWindow()
+        return WebAuthPresenter(window: window)
     }
     
     func signInWithPasskey() async {
@@ -664,171 +726,11 @@ private class PasskeyAuthDelegate: NSObject, ASAuthorizationControllerDelegate {
     }
 }
 
-// MARK: - ═══════════════════════════════════════
-// MARK: - GOOGLE AUTH WEB VIEW (WKWebView inside app)
-// MARK: - ═══════════════════════════════════════
-
-/// In-app WebView for Google OAuth — the user NEVER leaves the app.
-/// After successful Google login, the backend redirects to its dashboard.
-/// We detect this by monitoring cookies and URL changes, then extract
-/// the session token and close the WebView automatically.
-struct GoogleAuthWebView: UIViewRepresentable {
-    let url: URL
-    let onSessionDetected: ([HTTPCookie]) -> Void
-    let onCancel: () -> Void
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // Use default (persistent) data store so cookies are shared and visible
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = context.coordinator
-        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        let request = URLRequest(url: url)
-        webView.load(request)
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    class Coordinator: NSObject, WKNavigationDelegate {
-        let parent: GoogleAuthWebView
-        var hasCompleted = false
-
-        init(_ parent: GoogleAuthWebView) { self.parent = parent }
-
-        /// Intercept navigation — detect roua:// callback or dashboard redirect
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if let url = navigationAction.request.url {
-                // If backend redirects to roua:// scheme, capture it immediately
-                if url.scheme == "roua" {
-                    decisionHandler(.cancel)
-                    checkCookiesAndComplete(webView: webView)
-                    return
-                }
-            }
-            decisionHandler(.allow)
-        }
-
-        /// After each page load finishes, check if the user has authenticated
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard !hasCompleted else { return }
-
-            // Check if we've been redirected to a dashboard-like URL
-            // (meaning Google auth succeeded and backend logged us in)
-            if let url = webView.url {
-                let urlString = url.absoluteString
-                // Common patterns after successful OAuth:
-                // - /dashboard, /app, /home, /trading
-                // - URL no longer contains "signin" or "auth/signin"
-                let isDashboard = urlString.contains("/dashboard") ||
-                                  urlString.contains("/app") ||
-                                  urlString.contains("/home") ||
-                                  urlString.contains("/trading") ||
-                                  urlString.contains("/portfolio") ||
-                                  urlString.contains("/overview")
-
-                // Also check if URL has token/session params
-                let hasToken = urlString.contains("token=") || urlString.contains("session=")
-
-                if isDashboard || hasToken {
-                    checkCookiesAndComplete(webView: webView)
-                    return
-                }
-            }
-
-            // Also periodically check cookies — the backend may set a session cookie
-            // even if the URL doesn't change to a dashboard path
-            checkCookiesAndComplete(webView: webView)
-        }
-
-        /// Check all cookies in the WebView's cookie store for session tokens
-        private func checkCookiesAndComplete(webView: WKWebView) {
-            guard !hasCompleted else { return }
-
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-                guard let self = self, !self.hasCompleted else { return }
-
-                // Look for session-related cookies
-                let sessionCookies = cookies.filter { cookie in
-                    let name = cookie.name.lowercased()
-                    let domain = cookie.domain.lowercased()
-                    // Match cookies from our backend domain
-                    let isOurDomain = domain.contains("roua-trading") || domain.contains("railway.app") || domain.contains("localhost")
-                    let isSessionCookie = name.contains("session") || name.contains("token") ||
-                                          name == "connect.sid" || name == "roua-session" ||
-                                          name == "x-roua-session" || name == "auth-token"
-                    return isOurDomain && isSessionCookie
-                }
-
-                // If we found any session cookies, the user has authenticated
-                if !sessionCookies.isEmpty {
-                    self.hasCompleted = true
-                    DispatchQueue.main.async {
-                        self.parent.onSessionDetected(cookies)
-                    }
-                }
-            }
-        }
-
-        /// Handle errors
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            // Don't report cancellation errors
-            if (error as NSError).code != NSURLErrorCancelled {
-                DispatchQueue.main.async {
-                    self.parent.onCancel()
-                }
-            }
-        }
-    }
-}
-
-/// SwiftUI wrapper for the Google Auth WebView with a close button
-struct GoogleAuthSheet: View {
-    @ObservedObject var authManager: AuthManager
-    let url: URL
-
-    var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-
-                GoogleAuthWebView(
-                    url: url,
-                    onSessionDetected: { cookies in
-                        authManager.handleGoogleWebAuth(cookies: cookies)
-                    },
-                    onCancel: {
-                        authManager.cancelGoogleAuth()
-                    }
-                )
-                .ignoresSafeArea(.container, edges: .bottom)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        authManager.cancelGoogleAuth()
-                    }
-                    .foregroundStyle(RouaTheme.Colors.accent)
-                }
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(RouaTheme.Colors.accent)
-                        Text("Sign in with Google")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(RouaTheme.Colors.textPrimary)
-                    }
-                }
-            }
-            .toolbarBackground(Color(hex: "111827"), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-        }
-    }
+/// Provides the UIWindow for ASWebAuthenticationSession presentation
+private class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
+    let window: UIWindow
+    init(window: UIWindow) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
 }
 
 // MARK: - ═══════════════════════════════════════
@@ -1513,16 +1415,6 @@ struct AuthView: View {
             }.disabled(authManager.isGoogleLoading)
             
             Text("Fast & secure - use your Google account").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
-        }
-        .sheet(isPresented: $authManager.showGoogleAuthSheet, onDismiss: {
-            if authManager.isGoogleLoading {
-                authManager.cancelGoogleAuth()
-            }
-        }) {
-            GoogleAuthSheet(
-                authManager: authManager,
-                url: URL(string: "\(APIConfig.baseURL)/auth/signin/google")!
-            )
         }
     }
     

@@ -1,10 +1,10 @@
 import Foundation
-import KeychainAccess
+import Security
 
-// MARK: - Keychain Manager
+// MARK: - Keychain Manager (Native Security framework — no SPM dependency)
 class KeychainManager {
     static let shared = KeychainManager()
-    private let keychain = KeychainAccess.Keychain(service: "com.roua.trading")
+    private let service = "com.roua.trading"
 
     private init() {}
 
@@ -18,21 +18,54 @@ class KeychainManager {
     }
 
     // MARK: - CRUD
-    func set(key: String, value: String) { keychain[key] = value }
-    func get(key: String) -> String? { keychain[key] }
-    func delete(key: String) {
-        do {
-            try keychain.remove(key)
-        } catch {
-            print("[Keychain] Failed to delete key \(key): \(error.localizedDescription)")
-        }
+    func set(key: String, value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        // Delete existing
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        // Add new
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
+        SecItemAdd(addQuery as CFDictionary, nil)
     }
+
+    func get(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
     func deleteAll() {
-        do {
-            try keychain.removeAll()
-        } catch {
-            print("[Keychain] Failed to delete all keys: \(error.localizedDescription)")
-        }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     // MARK: - Convenience Methods

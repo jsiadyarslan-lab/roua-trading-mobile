@@ -7,8 +7,6 @@ workflows:
     instance_type: mac_mini_m2
 
     environment:
-      ios_signing:
-        distribution_type: none  # No signing — unsigned IPA
       vars:
         XCODE_PROJECT: RouaTrading.xcodeproj
         XCODE_SCHEME: RouaTrading

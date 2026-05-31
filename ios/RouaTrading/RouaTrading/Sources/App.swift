@@ -515,7 +515,7 @@ class AuthManager: ObservableObject {
             let passkeyRequest = provider.createCredentialAssertionRequest(challenge: challengeDataBytes)
             if let allowCreds = challengeResp.allowCredentials {
                 passkeyRequest.allowedCredentials = allowCreds.map { cred in
-                    ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8), transports: nil)
+                    ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8))
                 }
             }
             let controller = ASAuthorizationController(authorizationRequests: [passkeyRequest])
@@ -526,9 +526,9 @@ class AuthManager: ObservableObject {
             struct PasskeyVerifyRequest: Encodable { let credential: PasskeyCredential; struct PasskeyCredential: Encodable { let id: String; let rawId: String; let response: PasskeyResponse; let type: String }; struct PasskeyResponse: Encodable { let authenticatorData: String; let clientDataJSON: String; let signature: String; let userHandle: String? } }
             let verifyBody = PasskeyVerifyRequest(credential: PasskeyVerifyRequest.PasskeyCredential(
                 id: assertion.credentialID.base64EncodedString(), rawId: assertion.credentialID.base64EncodedString(),
-                response: PasskeyVerifyRequest.PasskeyCredential.PasskeyResponse(
-                    authenticatorData: assertion.authenticatorData.base64EncodedString(),
-                    clientDataJSON: assertion.clientDataJSON.base64EncodedString(),
+                response: PasskeyVerifyRequest.PasskeyResponse(
+                    authenticatorData: assertion.rawAuthenticatorData.base64EncodedString(),
+                    clientDataJSON: assertion.rawClientDataJSON.base64EncodedString(),
                     signature: assertion.signature.base64EncodedString(),
                     userHandle: assertion.userID?.base64EncodedString()
                 ), type: "public-key"

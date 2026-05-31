@@ -30,22 +30,24 @@ class DashboardViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            // Load account overview (includes positions + summary)
+            // Load account overview (includes positions + summary) — requires auth
             let account: AccountOverview = try await api.request("/trading/account")
             self.accountOverview = account
             self.positions = account.positions ?? []
+        } catch {
+            // Auth may be required — don't crash
+            print("[Dashboard] Account data unavailable: \(error.localizedDescription)")
+        }
 
-            // Load trade history separately
+        do {
+            // Load trade history separately — requires auth
             let historyResponse: TradeHistoryResponse = try await api.request("/trading/history")
             self.trades = historyResponse.trades ?? []
-
-            self.isLoading = false
         } catch {
-            self.isLoading = false
-            self.errorMessage = "فشل تحميل لوحة المعلومات: \(error.localizedDescription)"
-            self.showError = true
-            print("[Dashboard] Load error: \(error)")
+            print("[Dashboard] Trade history unavailable: \(error.localizedDescription)")
         }
+
+        self.isLoading = false
     }
 
     func retry() async {

@@ -131,8 +131,8 @@ class ChartCoordinator {
 
     /// Convert timestamp (seconds) to LightweightCharts Time
     private func timeFromTimestamp(_ timestamp: TimeInterval) -> Time {
-        // Binance kline timestamps are in milliseconds, convert to seconds
-        let seconds = timestamp > 1_000_000_000 ? timestamp / 1000.0 : timestamp
+        // If timestamp is in milliseconds (from Binance WS), convert to seconds
+        let seconds = timestamp > 1_000_000_000_000 ? timestamp / 1000.0 : timestamp
         return .utc(timestamp: seconds)
     }
 
@@ -141,7 +141,7 @@ class ChartCoordinator {
         var volumeData: [HistogramData] = []
 
         for candle in candles {
-            let time = timeFromTimestamp(candle.time)
+            let time = timeFromTimestamp(candle.resolvedTime)
             let item = CandlestickData(
                 time: time,
                 open: candle.open,
@@ -161,7 +161,7 @@ class ChartCoordinator {
 
         // Add live candle if available
         if let live = liveCandle {
-            let time = timeFromTimestamp(live.time)
+            let time = timeFromTimestamp(live.resolvedTime)
             let liveItem = CandlestickData(
                 time: time,
                 open: live.open,

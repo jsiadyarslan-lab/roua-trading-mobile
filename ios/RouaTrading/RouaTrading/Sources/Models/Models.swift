@@ -62,14 +62,79 @@ struct QuoteResponse: Codable {
 }
 
 // MARK: - Candle Data (for WebSocket + REST)
+// Backend returns `timestamp` as ISO string "2026-05-23T14:00:00.000Z"
+// and also has `datetime` field. We accept both timestamp (string or number)
+// and fall back to `time` (for WebSocket candles which use numeric seconds).
 struct CandleData: Codable, Identifiable {
-    var id: TimeInterval { time }
-    let time: TimeInterval
+    var id: TimeInterval { resolvedTime }
     let open: Double
     let high: Double
     let low: Double
     let close: Double
     let volume: Double
+
+    // Backend fields (can be string or number)
+    private let timestamp: TimestampValue?
+    private let datetime: String?
+
+    // Computed: resolve to seconds since epoch
+    var resolvedTime: TimeInterval {
+        if let ts = timestamp {
+            return ts.timeInterval
+        }
+        // Fallback: parse datetime string
+        if let dt = datetime {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: dt) {
+                return date.timeIntervalSince1970
+            }
+        }
+        return 0
+    }
+
+    // Convenience for chart (alias)
+    var time: TimeInterval { resolvedTime }
+
+    // Manual init for WebSocket live candles (numeric time)
+    init(time: TimeInterval, open: Double, high: Double, low: Double, close: Double, volume: Double) {
+        self.timestamp = TimestampValue(value: time)
+        self.datetime = nil
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+    }
+}
+
+// Type that can decode both String and Number timestamps
+struct TimestampValue: Codable {
+    let value: TimeInterval
+
+    init(value: TimeInterval) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let doubleVal = try? container.decode(Double.self) {
+            value = doubleVal
+        } else if let stringVal = try? container.decode(String.self) {
+            // ISO date string -> epoch seconds
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: stringVal) {
+                value = date.timeIntervalSince1970
+            } else {
+                value = Double(stringVal) ?? 0
+            }
+        } else {
+            value = 0
+        }
+    }
+
+    var timeInterval: TimeInterval { value }
 }
 
 // MARK: - Trading Models

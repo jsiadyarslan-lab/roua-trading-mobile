@@ -42,14 +42,12 @@ struct ChartPageView: View {
                     chartOverlay
                 }
                 .frame(maxHeight: .infinity)
-
-                // ─── Bottom Tool Buttons ───
-                bottomTools
             }
         }
         .background(RouaTheme.Colors.background)
         .navigationBarHidden(true)
         .task {
+            vm.selectedTimeframe = selectedTimeframe.lowercased()
             await vm.loadTradingData()
             wsManager.connect(symbol: vm.symbol, interval: selectedTimeframe)
         }
@@ -113,6 +111,7 @@ struct ChartPageView: View {
                     ForEach(timeframes, id: \.self) { tf in
                         Button {
                             selectedTimeframe = tf
+                            vm.selectedTimeframe = tf.lowercased()
                             wsManager.connect(symbol: vm.symbol, interval: tf)
                             Task { await vm.loadHistoricalCandles() }
                         } label: {
@@ -256,43 +255,6 @@ struct ChartPageView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(RouaTheme.Colors.textSecondary)
             }
-        }
-    }
-
-    // MARK: - Bottom Tools
-    private var bottomTools: some View {
-        VStack(spacing: 0) {
-            Divider().background(RouaTheme.Colors.border)
-            HStack(spacing: 0) {
-                bottomToolButton(icon: "pencil.tip.crop.circle", label: "رسم") {
-                    showDrawingPanel = true
-                }
-                bottomToolButton(icon: "waveform.path.ecg", label: "مؤشرات") {
-                    showIndicatorPanel = true
-                }
-                bottomToolButton(icon: "brain", label: "تحليل ذكي") {
-                    showAIPanel = true
-                }
-                bottomToolButton(icon: "bell.badge", label: "تنبيهات") { }
-            }
-            .padding(.horizontal, RouaTheme.Spacing.xs)
-            .padding(.top, RouaTheme.Spacing.sm)
-            .padding(.bottom, RouaTheme.Spacing.md)
-            .background(RouaTheme.Colors.surface.opacity(0.95))
-            .background(.ultraThinMaterial)
-        }
-    }
-
-    private func bottomToolButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                Text(label)
-                    .font(.system(size: 9, weight: .medium))
-            }
-            .foregroundStyle(RouaTheme.Colors.textSecondary)
-            .frame(maxWidth: .infinity)
         }
     }
 }

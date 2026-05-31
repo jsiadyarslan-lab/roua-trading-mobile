@@ -56,4 +56,4 @@ targets:
 packages:
   LightweightCharts:
     url: https://github.com/tradingview/LightweightChartsIOS
-    from: "4.2.0"
+    from: "4.0.0"

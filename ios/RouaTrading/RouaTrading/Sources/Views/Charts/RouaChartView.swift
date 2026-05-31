@@ -118,8 +118,9 @@ class ChartCoordinator {
         let series = chart.addCandlestickSeries(options: candleOptions)
         self.candlestickSeries = series
 
-        // Volume histogram
+        // Volume histogram — use separate price scale for volume overlay
         let volumeOptions = HistogramSeriesOptions(
+            priceLineVisible: false,
             color: "rgba(59, 130, 246, 0.3)"  // accent with alpha
         )
         let volSeries = chart.addHistogramSeries(options: volumeOptions)
@@ -128,12 +129,19 @@ class ChartCoordinator {
         self.chart = chart
     }
 
+    /// Convert timestamp (seconds) to LightweightCharts Time
+    private func timeFromTimestamp(_ timestamp: TimeInterval) -> Time {
+        // Binance kline timestamps are in milliseconds, convert to seconds
+        let seconds = timestamp > 1_000_000_000 ? timestamp / 1000.0 : timestamp
+        return .utc(timestamp: seconds)
+    }
+
     func updateData(candles: [CandleData], liveCandle: CandleData?) {
         var candlestickData: [CandlestickData] = []
         var volumeData: [HistogramData] = []
 
         for candle in candles {
-            let time = BusinessDay.from(timestamp: candle.time)
+            let time = timeFromTimestamp(candle.time)
             let item = CandlestickData(
                 time: time,
                 open: candle.open,
@@ -153,7 +161,7 @@ class ChartCoordinator {
 
         // Add live candle if available
         if let live = liveCandle {
-            let time = BusinessDay.from(timestamp: live.time)
+            let time = timeFromTimestamp(live.time)
             let liveItem = CandlestickData(
                 time: time,
                 open: live.open,
@@ -168,27 +176,5 @@ class ChartCoordinator {
         volumeSeries?.setData(data: volumeData)
 
         chart?.timeScale.fitContent()
-    }
-}
-
-// MARK: - BusinessDay helper for time conversion
-extension BusinessDay {
-    static func from(timestamp: TimeInterval) -> Time {
-        // LightweightCharts uses UTC timestamp in seconds
-        // For intraday data use .utc, for daily use .string("YYYY-MM-DD")
-        let date = Date(timeIntervalSince1970: timestamp)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-
-        // If timestamp has intraday time component, use UTC timestamp
-        let calendar = Calendar(identifier: .gregorian)
-        let components = calendar.dateComponents(in: TimeZone(identifier: "UTC")!, from: date)
-        if components.hour != nil && components.hour! > 0 {
-            return .utc(timestamp: Int(timestamp))
-        }
-
-        // Daily data — use string date format
-        return .string(formatter.string(from: date))
     }
 }

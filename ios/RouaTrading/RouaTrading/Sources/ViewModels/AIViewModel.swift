@@ -19,7 +19,7 @@ class AIViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let request = AIAnalyzeRequest(prompt: text, language: "ar")
+            let request = AIAnalyzeRequest(prompt: text, type: "general", symbol: nil, language: "ar")
             let response: AIAnalyzeResponse = try await api.request("/ai/analyze", method: "POST", body: request)
             messages.append((content: response.text, isUser: false, model: response.model))
             isLoading = false

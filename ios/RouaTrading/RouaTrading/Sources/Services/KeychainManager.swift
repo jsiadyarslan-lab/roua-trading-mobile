@@ -15,19 +15,18 @@ class KeychainManager {
         case userId = "roua_user_id"
         case userEmail = "roua_user_email"
         case userTier = "roua_user_tier"
+        case appLanguage = "roua_app_language"
     }
 
     // MARK: - CRUD
     func set(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }
-        // Delete existing
         let deleteQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key
         ]
         SecItemDelete(deleteQuery as CFDictionary)
-        // Add new
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -37,7 +36,7 @@ class KeychainManager {
         SecItemAdd(addQuery as CFDictionary, nil)
     }
 
-    func get(key: String) -> String? {
+    func readValue(key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -75,9 +74,10 @@ class KeychainManager {
         if let userId = userId { set(key: Key.userId.rawValue, value: userId) }
     }
 
-    var sessionToken: String? { return get(key: Key.sessionToken.rawValue) }
-    var refreshToken: String? { return get(key: Key.refreshToken.rawValue) }
-    var savedUserId: String? { return get(key: Key.userId.rawValue) }
+    var sessionToken: String? { return readValue(key: Key.sessionToken.rawValue) }
+    var refreshToken: String? { return readValue(key: Key.refreshToken.rawValue) }
+    var savedUserId: String? { return readValue(key: Key.userId.rawValue) }
+    var savedLanguage: String? { return readValue(key: Key.appLanguage.rawValue) }
 
     func clearSession() {
         delete(key: Key.sessionToken.rawValue)

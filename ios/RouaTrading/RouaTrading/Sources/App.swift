@@ -159,6 +159,114 @@ struct UserNotification: Codable, Identifiable {
     let isRead: Bool; let createdAt: String
 }
 
+// MARK: - NEW MODELS
+
+struct Signal: Codable, Identifiable {
+    let id: String; let pair: String; let direction: String?
+    let entryPrice: Double?; let stopLoss: Double?; let takeProfit: Double?
+    let confidence: Double?; let status: String?; let createdAt: String?
+}
+
+struct ExecutorStatus: Codable {
+    let active: Bool?; let status: String?; let mode: String?
+    let startedAt: String?; let tradesExecuted: Int?; let pnl: Double?
+}
+
+struct ExecutorExposure: Codable {
+    let totalExposure: Double?; let maxExposure: Double?
+    let positions: Int?; let currency: String?
+}
+
+struct TradingBrief: Codable, Identifiable {
+    let id: String; let symbol: String; let title: String?
+    let summary: String?; let action: String?; let confidence: Double?
+    let createdAt: String?
+}
+
+struct AgentStatus: Codable {
+    let running: Bool?; let strategy: String?; let startedAt: String?
+    let tradesCount: Int?; let pnl: Double?; let status: String?
+}
+
+struct AgentSettings: Codable {
+    let maxPositionSize: Double?; let riskLevel: String?
+    let autoExecute: Bool?; let allowedPairs: [String]?
+}
+
+struct AgentPerformance: Codable {
+    let totalTrades: Int?; let winRate: Double?; let totalPnl: Double?
+    let sharpeRatio: Double?; let maxDrawdown: Double?
+}
+
+struct NewsArticle: Codable, Identifiable {
+    let id: String; let title: String; let summary: String?
+    let source: String?; let url: String?; let sentiment: String?
+    let publishedAt: String?
+}
+
+struct MarketSentiment: Codable {
+    let overall: String?; let score: Double?; let fearGreedIndex: Int?
+}
+
+struct ScannerOverview: Codable {
+    let totalScanned: Int?; let bullish: Int?; let bearish: Int?
+    let neutral: Int?; let topGainer: String?; let topLoser: String?
+}
+
+struct SymbolAnalysis: Codable {
+    let symbol: String; let price: Double?; let change: Double?
+    let recommendation: String?; let confidence: Double?
+    let support: Double?; let resistance: Double?
+}
+
+struct AIModel: Codable, Identifiable {
+    var id: String { name }; let name: String; let provider: String?; let active: Bool?
+}
+
+struct AIConsensusRequest: Codable { let prompt: String; let models: [String]? }
+struct AIConsensusResponse: Codable { let consensus: String?; let analyses: [String: String]? }
+
+struct NeuralPredictRequest: Codable { let symbol: String; let horizon: String? }
+struct NeuralPredictResponse: Codable { let prediction: Double?; let confidence: Double?; let direction: String?; let model: String? }
+
+struct NeuralBacktestRequest: Codable { let symbol: String; let strategy: String; let startDate: String; let endDate: String }
+struct NeuralBacktestResponse: Codable { let totalReturn: Double?; let sharpeRatio: Double?; let maxDrawdown: Double?; let trades: Int? }
+
+struct NewsAnalyzeRequest: Codable { let url: String?; let text: String? }
+struct NewsAnalyzeResponse: Codable { let sentiment: String?; let score: Double?; let summary: String? }
+
+struct NotificationPreferences: Codable {
+    let pushEnabled: Bool?; let emailEnabled: Bool?
+    let tradeAlerts: Bool?; let signalAlerts: Bool?; let newsAlerts: Bool?
+}
+
+struct UnreadCount: Codable { let count: Int? }
+
+struct CredentialBalance: Codable, Identifiable {
+    var id: String { credentialId }; let credentialId: String; let exchange: String?
+    let totalBalance: Double?; let availableBalance: Double?; let currency: String?
+}
+
+struct SanctuaryInfo: Codable {
+    let enabled: Bool?; let riskScore: Double?; let protectedAmount: Double?
+    let stopLossEnabled: Bool?; let maxDrawdown: Double?
+}
+
+struct V2Order: Codable, Identifiable {
+    let id: String; let symbol: String; let side: String; let type: String
+    let quantity: Double; let price: Double?; let status: String?
+    let createdAt: String?; let stopLoss: Double?; let takeProfit: Double?
+}
+
+struct AccountInfo: Codable {
+    let balance: Double?; let equity: Double?; let availableMargin: Double?
+    let unrealizedPnl: Double?; let currency: String?
+}
+
+struct ExchangeAdapter: Codable, Identifiable {
+    var id: String { name }; let name: String; let enabled: Bool?
+}
+
 /// Backend response wrapper: many endpoints return { success: true, data: {...} }
 struct ApiResponseWrapper: Codable {
     let success: Bool?
@@ -221,16 +329,13 @@ class APIClient {
         c.timeoutIntervalForRequest = APIConfig.requestTimeout
         c.httpShouldSetCookies = false
         self.session = URLSession(configuration: c)
-        // Backend returns camelCase — no conversion needed
         self.decoder.keyDecodingStrategy = .useDefaultKeys
     }
     
-    /// Unwrap backend `{ success, data }` wrapper if present
     private func unwrapResponse(_ data: Data) -> Data {
         guard let wrapper = try? decoder.decode(ApiResponseWrapper.self, from: data),
               wrapper.success == true,
               let innerData = wrapper.data else { return data }
-        // If the backend wrapped the response in { success, data }, extract the data field
         return try! JSONEncoder().encode(innerData)
     }
     
@@ -250,7 +355,6 @@ class APIClient {
         guard (200...299).contains(http.statusCode) else {
             throw APIError.serverError(http.statusCode, String(data: data, encoding: .utf8) ?? "Unknown")
         }
-        // Try to decode directly first; if that fails, try unwrapping { success, data }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -346,74 +450,48 @@ class AuthManager: ObservableObject {
         } catch { await MainActor.run { self.isAuthenticated = false } }
     }
     
-    // MARK: - Google Sign-In via ASWebAuthenticationSession
     func signInWithGoogle() async {
         await MainActor.run { isGoogleLoading = true; errorMessage = nil }
-        
         let baseURL = "https://roua-trading-production.up.railway.app"
         let googleAuthURL = URL(string: "\(baseURL)/api/auth/signin/google")!
         let callbackScheme = "roua"
-        
         do {
-            let (url, _) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, ASWebAuthenticationSession.Callback?), Error>) in
+            let _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
                 Task { @MainActor in
                     let session = ASWebAuthenticationSession(
                         url: googleAuthURL,
                         callbackURLScheme: callbackScheme
                     ) { callbackURL, error in
-                        if let error = error {
-                            continuation.resume(throwing: error)
-                            return
-                        }
+                        if let error = error { continuation.resume(throwing: error); return }
                         guard let callbackURL = callbackURL else {
                             continuation.resume(throwing: NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No callback URL"]))
                             return
                         }
-                        continuation.resume(returning: (callbackURL, nil))
+                        continuation.resume(returning: callbackURL)
                     }
                     session.prefersEphemeralWebBrowserSession = false
                     session.start()
                 }
             }
-            
-            // After Google OAuth, the browser redirects back. But since the backend
-            // uses cookie-based sessions, we need to extract the session from cookies.
-            // The backend sets a session cookie on callback.
-            // Alternative: use the /api/auth/me endpoint to check if we got a session.
             let response: AuthVerifyResponse = try await api.request("/auth/me")
             if response.success, let user = response.user {
-                await MainActor.run {
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    self.isGoogleLoading = false
-                }
+                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false }
             } else {
-                await MainActor.run {
-                    self.errorMessage = "Google login failed - no session"
-                    self.isGoogleLoading = false
-                }
+                await MainActor.run { self.errorMessage = "Google login failed - no session"; self.isGoogleLoading = false }
             }
         } catch {
-            await MainActor.run {
-                self.errorMessage = "Google login failed: \(error.localizedDescription)"
-                self.isGoogleLoading = false
-            }
+            await MainActor.run { self.errorMessage = "Google login failed: \(error.localizedDescription)"; self.isGoogleLoading = false }
         }
     }
     
-    // MARK: - Google Sign-In via SFSafariViewController (opens in-app Safari)
     func signInWithGoogleSafari() {
         guard let url = URL(string: "https://roua-trading-production.up.railway.app/api/auth/signin/google") else { return }
-        // We use the share sheet approach - open in Safari, user logs in, then comes back
         UIApplication.shared.open(url)
     }
     
-    // MARK: - Passkey / WebAuthn Login
     func signInWithPasskey() async {
         await MainActor.run { isPasskeyLoading = true; errorMessage = nil }
-        
         do {
-            // Step 1: Get challenge from backend
             let challengeURL = URL(string: "\(APIConfig.baseURL)/auth/challenge?email=passkey@roua.auto")!
             var challengeRequest = URLRequest(url: challengeURL)
             challengeRequest.httpMethod = "GET"
@@ -422,86 +500,41 @@ class AuthManager: ObservableObject {
                 challengeRequest.setValue(token, forHTTPHeaderField: APIConfig.sessionHeader)
             }
             let (challengeData, challengeResponse) = try await URLSession.shared.data(for: challengeRequest)
-            guard let httpResp = challengeResponse as? HTTPURLResponse,
-                  (200...299).contains(httpResp.statusCode) else {
+            guard let httpResp = challengeResponse as? HTTPURLResponse, (200...299).contains(httpResp.statusCode) else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get passkey challenge"])
             }
-            
-            struct ChallengeResponse: Codable {
-                let challenge: String
-                let rpId: String?
-                let allowCredentials: [AllowCredential]?
-                struct AllowCredential: Codable {
-                    let id: String
-                    let type: String
-                }
-            }
+            struct ChallengeResponse: Codable { let challenge: String; let rpId: String?; let allowCredentials: [AllowCredential]?; struct AllowCredential: Codable { let id: String; let type: String } }
             let challengeResp = try JSONDecoder().decode(ChallengeResponse.self, from: challengeData)
-            
-            // Step 2: Use ASAuthorizationController for Passkey
-            let challengeDataBytes = Data(base64Encoded: challengeResp.challenge)
-                ?? Data(challengeResp.challenge.utf8)
-            
-            let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(
-                relyingPartyIdentifier: challengeResp.rpId ?? "roua-trading-production.up.railway.app"
-            )
-            
+            let challengeDataBytes = Data(base64Encoded: challengeResp.challenge) ?? Data(challengeResp.challenge.utf8)
+            let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: challengeResp.rpId ?? "roua-trading-production.up.railway.app")
             let request = provider.createCredentialAssertionRequest(challenge: challengeDataBytes)
-            
             if let allowCreds = challengeResp.allowCredentials {
                 request.allowedCredentials = allowCreds.map { cred in
-                    ASAuthorizationPlatformPublicKeyCredentialDescriptor(
-                        credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8),
-                        transports: nil
-                    )
+                    ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: Data(base64Encoded: cred.id) ?? Data(cred.id.utf8), transports: nil)
                 }
             }
-            
             let controller = ASAuthorizationController(authorizationRequests: [request])
-            
             let authResult: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
                 Task { @MainActor in
                     let delegate = PasskeyAuthDelegate(continuation: continuation)
                     controller.delegate = delegate
                     controller.performRequests()
-                    // Keep delegate alive
                     objc_setAssociatedObject(controller, "passkeyDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
                 }
             }
-            
-            // Step 3: Send assertion to backend for verification
             guard let assertion = authResult.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid credential type"])
             }
-            
-            struct PasskeyVerifyRequest: Encodable {
-                let credential: PasskeyCredential
-                struct PasskeyCredential: Encodable {
-                    let id: String
-                    let rawId: String
-                    let response: PasskeyResponse
-                    let type: String
-                }
-                struct PasskeyResponse: Encodable {
-                    let authenticatorData: String
-                    let clientDataJSON: String
-                    let signature: String
-                    let userHandle: String?
-                }
-            }
-            
+            struct PasskeyVerifyRequest: Encodable { let credential: PasskeyCredential; struct PasskeyCredential: Encodable { let id: String; let rawId: String; let response: PasskeyResponse; let type: String }; struct PasskeyResponse: Encodable { let authenticatorData: String; let clientDataJSON: String; let signature: String; let userHandle: String? } }
             let verifyBody = PasskeyVerifyRequest(credential: PasskeyVerifyRequest.PasskeyCredential(
-                id: assertion.credentialID.base64EncodedString(),
-                rawId: assertion.credentialID.base64EncodedString(),
+                id: assertion.credentialID.base64EncodedString(), rawId: assertion.credentialID.base64EncodedString(),
                 response: PasskeyVerifyRequest.PasskeyCredential.PasskeyResponse(
                     authenticatorData: assertion.authenticatorData.base64EncodedString(),
                     clientDataJSON: assertion.clientDataJSON.base64EncodedString(),
                     signature: assertion.signature.base64EncodedString(),
                     userHandle: assertion.userID?.base64EncodedString()
-                ),
-                type: "public-key"
+                ), type: "public-key"
             ))
-            
             var verifyRequest = URLRequest(url: URL(string: "\(APIConfig.baseURL)/auth/passkey/verify")!)
             verifyRequest.httpMethod = "POST"
             verifyRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -510,36 +543,21 @@ class AuthManager: ObservableObject {
                 verifyRequest.setValue(token, forHTTPHeaderField: APIConfig.sessionHeader)
             }
             verifyRequest.httpBody = try JSONEncoder().encode(verifyBody)
-            
             let (_, verifyResponse) = try await URLSession.shared.data(for: verifyRequest)
-            guard let verifyHTTP = verifyResponse as? HTTPURLResponse,
-                  (200...299).contains(verifyHTTP.statusCode) else {
+            guard let verifyHTTP = verifyResponse as? HTTPURLResponse, (200...299).contains(verifyHTTP.statusCode) else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Passkey verification failed"])
             }
-            
-            // Step 4: Validate session
             let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
             if meResponse.success, let user = meResponse.user {
-                await MainActor.run {
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    self.isPasskeyLoading = false
-                }
+                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isPasskeyLoading = false }
             } else {
-                await MainActor.run {
-                    self.errorMessage = "Passkey login failed"
-                    self.isPasskeyLoading = false
-                }
+                await MainActor.run { self.errorMessage = "Passkey login failed"; self.isPasskeyLoading = false }
             }
         } catch {
-            await MainActor.run {
-                self.errorMessage = "Passkey failed: \(error.localizedDescription)"
-                self.isPasskeyLoading = false
-            }
+            await MainActor.run { self.errorMessage = "Passkey failed: \(error.localizedDescription)"; self.isPasskeyLoading = false }
         }
     }
     
-    // MARK: - OTP Login
     func sendOTP(email: String) async {
         await MainActor.run { isOTPLoading = true; errorMessage = nil }
         do {
@@ -553,10 +571,7 @@ class AuthManager: ObservableObject {
             }
             await MainActor.run { self.otpSent = true; self.isOTPLoading = false }
         } catch {
-            await MainActor.run {
-                self.errorMessage = "Failed to send code: \(error.localizedDescription)"
-                self.isOTPLoading = false
-            }
+            await MainActor.run { self.errorMessage = "Failed to send code: \(error.localizedDescription)"; self.isOTPLoading = false }
         }
     }
     
@@ -571,39 +586,23 @@ class AuthManager: ObservableObject {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid code"])
             }
-            // Check if authenticated
             struct OTPVerifyResponse: Codable { let authenticated: Bool?; let success: Bool? }
             let otpResp = try? JSONDecoder().decode(OTPVerifyResponse.self, from: data)
             if otpResp?.authenticated == true || otpResp?.success == true {
-                // Session is now established via cookies, validate it
                 let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
                 if meResponse.success, let user = meResponse.user {
-                    await MainActor.run {
-                        self.currentUser = user
-                        self.isAuthenticated = true
-                        self.isOTPLoading = false
-                    }
+                    await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false }
                 } else {
-                    await MainActor.run {
-                        self.errorMessage = "Login failed - could not verify session"
-                        self.isOTPLoading = false
-                    }
+                    await MainActor.run { self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false }
                 }
             } else {
-                await MainActor.run {
-                    self.errorMessage = "Invalid verification code"
-                    self.isOTPLoading = false
-                }
+                await MainActor.run { self.errorMessage = "Invalid verification code"; self.isOTPLoading = false }
             }
         } catch {
-            await MainActor.run {
-                self.errorMessage = "Verification failed: \(error.localizedDescription)"
-                self.isOTPLoading = false
-            }
+            await MainActor.run { self.errorMessage = "Verification failed: \(error.localizedDescription)"; self.isOTPLoading = false }
         }
     }
     
-    // MARK: - Direct email login
     func login(email: String) async {
         await MainActor.run { isLoading = true; errorMessage = nil }
         do {
@@ -618,16 +617,9 @@ class AuthManager: ObservableObject {
             struct MeResponse: Codable { let authenticated: Bool?; let success: Bool?; let user: AuthUser? }
             let meResp = try? JSONDecoder().decode(MeResponse.self, from: data)
             if meResp?.authenticated == true || meResp?.success == true, let user = meResp?.user {
-                await MainActor.run {
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    self.isLoading = false
-                }
+                await MainActor.run { self.currentUser = user; self.isAuthenticated = true; self.isLoading = false }
             } else {
-                await MainActor.run {
-                    self.errorMessage = "Login failed - try Google or OTP instead"
-                    self.isLoading = false
-                }
+                await MainActor.run { self.errorMessage = "Login failed - try Google or OTP instead"; self.isLoading = false }
             }
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription; self.isLoading = false }
@@ -684,6 +676,9 @@ class TradingViewModel: ObservableObject {
     @Published var symbol = "BTC/USDT"
     @Published var currentQuote: Quote?
     @Published var positions: [Position] = []
+    @Published var orders: [V2Order] = []
+    @Published var trades: [Trade] = []
+    @Published var accountInfo: AccountInfo?
     @Published var orderSide = "BUY"
     @Published var orderType = "MARKET"
     @Published var quantity = ""
@@ -692,6 +687,7 @@ class TradingViewModel: ObservableObject {
     @Published var isPlacingOrder = false
     @Published var orderSuccess: V2PlaceOrderResponse?
     @Published var orderError: String?
+    @Published var isLoadingOrders = false
     private let api = APIClient.shared
     
     func loadTradingData() async {
@@ -699,6 +695,22 @@ class TradingViewModel: ObservableObject {
             let quote: Quote = try await api.request("/exchange/quote/\(symbol)")
             let positions: [Position] = try await api.request("/trading/v2/positions")
             await MainActor.run { self.currentQuote = quote; self.positions = positions }
+        } catch {}
+    }
+    
+    func loadOrders() async {
+        await MainActor.run { isLoadingOrders = true }
+        do {
+            let orders: [V2Order] = try await api.request("/trading/v2/orders")
+            let trades: [Trade] = try await api.request("/trading/history")
+            await MainActor.run { self.orders = orders; self.trades = Array(trades.prefix(20)); self.isLoadingOrders = false }
+        } catch { await MainActor.run { isLoadingOrders = false } }
+    }
+    
+    func cancelOrder(id: String) async {
+        do {
+            let _: V2PlaceOrderResponse = try await api.request("/trading/v2/orders/\(id)", method: "DELETE")
+            await loadOrders()
         } catch {}
     }
     
@@ -723,7 +735,18 @@ class AIViewModel: ObservableObject {
     @Published var messages: [(content: String, isUser: Bool, model: String?)] = []
     @Published var inputText = ""
     @Published var isLoading = false
+    @Published var availableModels: [AIModel] = []
+    @Published var selectedModel: String?
+    @Published var consensusResult: AIConsensusResponse?
+    @Published var isConsensusLoading = false
     private let api = APIClient.shared
+    
+    func loadModels() async {
+        do {
+            let models: [AIModel] = try await api.request("/ai/models")
+            await MainActor.run { self.availableModels = models }
+        } catch {}
+    }
     
     func sendMessage() async {
         let text = inputText; guard !text.isEmpty else { return }
@@ -737,34 +760,405 @@ class AIViewModel: ObservableObject {
             await MainActor.run { messages.append((content: "Error: \(error.localizedDescription)", isUser: false, model: nil)); isLoading = false }
         }
     }
+    
+    func runConsensus(prompt: String) async {
+        await MainActor.run { isConsensusLoading = true }
+        do {
+            let request = AIConsensusRequest(prompt: prompt, models: nil)
+            let response: AIConsensusResponse = try await api.request("/ai/consensus", method: "POST", body: request)
+            await MainActor.run { self.consensusResult = response; self.isConsensusLoading = false }
+        } catch {
+            await MainActor.run { self.isConsensusLoading = false }
+        }
+    }
 }
 
 class ScannerViewModel: ObservableObject {
     @Published var results: [ScanResult] = []
     @Published var heatmapData: [HeatmapItem] = []
+    @Published var overview: ScannerOverview?
+    @Published var symbolAnalysis: SymbolAnalysis?
+    @Published var selectedSymbol: String?
     @Published var isLoading = false
+    @Published var timeframe: String = "1h"
+    @Published var category: String = "crypto"
     private let api = APIClient.shared
     
     func runScan() async {
         await MainActor.run { isLoading = true }
         do {
-            let results: [ScanResult] = try await api.request("/scanner/scan")
-            let heatmap: [HeatmapItem] = try await api.request("/scanner/heatmap")
+            let results: [ScanResult] = try await api.request("/scanner/scan?timeframe=\(timeframe)&category=\(category)")
+            let heatmap: [HeatmapItem] = try await api.request("/scanner/heatmap?category=\(category)")
             await MainActor.run { self.results = results; self.heatmapData = heatmap; self.isLoading = false }
         } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadOverview() async {
+        do {
+            let overview: ScannerOverview = try await api.request("/scanner/overview")
+            await MainActor.run { self.overview = overview }
+        } catch {}
+    }
+    
+    func loadAnalysis(symbol: String) async {
+        await MainActor.run { selectedSymbol = symbol }
+        do {
+            let analysis: SymbolAnalysis = try await api.request("/scanner/analysis/\(symbol)")
+            await MainActor.run { self.symbolAnalysis = analysis }
+        } catch { await MainActor.run { self.symbolAnalysis = nil } }
     }
 }
 
 class PortfolioViewModel: ObservableObject {
     @Published var credentials: [ExchangeCredential] = []
+    @Published var balances: [CredentialBalance] = []
+    @Published var sanctuary: SanctuaryInfo?
     @Published var totalValue: Double = 0
+    @Published var isLoading = false
+    @Published var errorMessage: String?
     private let api = APIClient.shared
     
     func loadData() async {
+        await MainActor.run { isLoading = true }
         do {
             let creds: [ExchangeCredential] = try await api.request("/portfolio/credentials")
-            await MainActor.run { self.credentials = creds }
+            await MainActor.run { self.credentials = creds; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadBalances() async {
+        do {
+            let balances: [CredentialBalance] = try await api.request("/portfolio/credentials/balances")
+            await MainActor.run { self.balances = balances }
         } catch {}
+    }
+    
+    func loadSanctuary() async {
+        do {
+            let sanctuary: SanctuaryInfo = try await api.request("/portfolio/sanctuary")
+            await MainActor.run { self.sanctuary = sanctuary }
+        } catch {}
+    }
+    
+    func deleteCredential(id: String) async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/portfolio/credentials/\(id)", method: "DELETE")
+            await loadData()
+        } catch {
+            await MainActor.run { errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+// MARK: - NEW VIEWMODELS
+
+class AgentViewModel: ObservableObject {
+    @Published var status: AgentStatus?
+    @Published var performance: AgentPerformance?
+    @Published var settings: AgentSettings?
+    @Published var isLoading = false
+    @Published var isToggling = false
+    @Published var errorMessage: String?
+    @Published var selectedStrategy = "momentum"
+    @Published var maxPositionSize = ""
+    @Published var riskLevel = "medium"
+    private let api = APIClient.shared
+    
+    func loadStatus() async {
+        await MainActor.run { isLoading = true }
+        do {
+            let status: AgentStatus = try await api.request("/agent/trader/status")
+            await MainActor.run { self.status = status; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadPerformance() async {
+        do {
+            let perf: AgentPerformance = try await api.request("/agent/trader/performance")
+            await MainActor.run { self.performance = perf }
+        } catch {}
+    }
+    
+    func loadSettings() async {
+        do {
+            let settings: AgentSettings = try await api.request("/agent/trader/settings")
+            await MainActor.run { self.settings = settings; self.riskLevel = settings.riskLevel ?? "medium"; self.selectedStrategy = "momentum" }
+        } catch {}
+    }
+    
+    func startAgent() async {
+        await MainActor.run { isToggling = true }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/agent/trader/start", method: "POST", body: ["strategy": selectedStrategy])
+            await MainActor.run { isToggling = false }; await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isToggling = false } }
+    }
+    
+    func stopAgent() async {
+        await MainActor.run { isToggling = true }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/agent/trader/stop", method: "POST")
+            await MainActor.run { isToggling = false }; await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isToggling = false } }
+    }
+    
+    func updateSettings() async {
+        let body: [String: Any] = [
+            "maxPositionSize": Double(maxPositionSize) ?? 100,
+            "riskLevel": riskLevel,
+            "autoExecute": false
+        ]
+        do {
+            let _: ApiResponseWrapper = try await api.request("/agent/trader/settings", method: "PUT", body: AnyCodable(value: body))
+            await loadSettings()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+    
+    func updateStrategy() async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/agent/trader/strategy", method: "PUT", body: ["strategy": selectedStrategy])
+            await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+}
+
+class SignalsViewModel: ObservableObject {
+    @Published var activeSignals: [Signal] = []
+    @Published var signalHistory: [Signal] = []
+    @Published var isLoading = false
+    @Published var isGenerating = false
+    @Published var errorMessage: String?
+    @Published var generatePair = "BTC/USDT"
+    private let api = APIClient.shared
+    
+    func loadActiveSignals() async {
+        await MainActor.run { isLoading = true }
+        do {
+            let signals: [Signal] = try await api.request("/signals/active")
+            await MainActor.run { self.activeSignals = signals; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadHistory() async {
+        do {
+            let history: [Signal] = try await api.request("/signals/history")
+            await MainActor.run { self.signalHistory = history }
+        } catch {}
+    }
+    
+    func generateSignal() async {
+        await MainActor.run { isGenerating = true; errorMessage = nil }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/signals/generate/\(generatePair)", method: "POST")
+            await MainActor.run { isGenerating = false }; await loadActiveSignals()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isGenerating = false } }
+    }
+    
+    func executeSignal(id: String) async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/signals/\(id)/execute", method: "POST")
+            await loadActiveSignals()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+}
+
+class ExecutorViewModel: ObservableObject {
+    @Published var status: ExecutorStatus?
+    @Published var exposure: ExecutorExposure?
+    @Published var userEnabled: Bool?
+    @Published var isLoading = false
+    @Published var isToggling = false
+    @Published var errorMessage: String?
+    private let api = APIClient.shared
+    
+    func loadStatus() async {
+        await MainActor.run { isLoading = true }
+        do {
+            let status: ExecutorStatus = try await api.request("/smart-executor/status")
+            await MainActor.run { self.status = status; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadExposure() async {
+        do {
+            let exposure: ExecutorExposure = try await api.request("/smart-executor/exposure")
+            await MainActor.run { self.exposure = exposure }
+        } catch {}
+    }
+    
+    func loadUserStatus() async {
+        do {
+            let resp: ExecutorStatus = try await api.request("/smart-executor/user/status")
+            await MainActor.run { self.userEnabled = resp.active }
+        } catch {}
+    }
+    
+    func start() async {
+        await MainActor.run { isToggling = true }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/smart-executor/start", method: "POST")
+            await MainActor.run { isToggling = false }; await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isToggling = false } }
+    }
+    
+    func stop() async {
+        await MainActor.run { isToggling = true }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/smart-executor/stop", method: "POST")
+            await MainActor.run { isToggling = false }; await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isToggling = false } }
+    }
+    
+    func emergencyStop() async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/smart-executor/emergency-stop", method: "POST")
+            await loadStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+    
+    func enableUser() async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/smart-executor/user/enable", method: "POST")
+            await MainActor.run { userEnabled = true }; await loadUserStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+    
+    func disableUser() async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/smart-executor/user/disable", method: "POST")
+            await MainActor.run { userEnabled = false }; await loadUserStatus()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
+    }
+}
+
+class CouncilViewModel: ObservableObject {
+    @Published var activeBriefs: [TradingBrief] = []
+    @Published var briefHistory: [TradingBrief] = []
+    @Published var isLoading = false
+    @Published var isTriggering = false
+    @Published var errorMessage: String?
+    @Published var triggerSymbol = ""
+    private let api = APIClient.shared
+    
+    func loadActiveBriefs() async {
+        await MainActor.run { isLoading = true }
+        var path = "/strategic-council/briefs/active"
+        if !triggerSymbol.isEmpty { path += "?symbol=\(triggerSymbol)" }
+        do {
+            let briefs: [TradingBrief] = try await api.request(path)
+            await MainActor.run { self.activeBriefs = briefs; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadHistory() async {
+        do {
+            let history: [TradingBrief] = try await api.request("/strategic-council/briefs/history")
+            await MainActor.run { self.briefHistory = history }
+        } catch {}
+    }
+    
+    func triggerCouncil() async {
+        await MainActor.run { isTriggering = true; errorMessage = nil }
+        let body: [String: String] = triggerSymbol.isEmpty ? [:] : ["symbol": triggerSymbol]
+        do {
+            let _: ApiResponseWrapper = try await api.request("/strategic-council/trigger", method: "POST", body: AnyCodable(value: body))
+            await MainActor.run { isTriggering = false }; await loadActiveBriefs()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isTriggering = false } }
+    }
+}
+
+class NewsViewModel: ObservableObject {
+    @Published var articles: [NewsArticle] = []
+    @Published var sentiment: MarketSentiment?
+    @Published var analysisResult: NewsAnalyzeResponse?
+    @Published var isLoading = false
+    @Published var isAnalyzing = false
+    @Published var errorMessage: String?
+    @Published var symbol: String = ""
+    private let api = APIClient.shared
+    
+    func loadLatest() async {
+        await MainActor.run { isLoading = true }
+        var path = "/news/latest?limit=20"
+        if !symbol.isEmpty { path += "&symbol=\(symbol)" }
+        do {
+            let articles: [NewsArticle] = try await api.request(path)
+            await MainActor.run { self.articles = articles; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadSentiment() async {
+        do {
+            let sentiment: MarketSentiment = try await api.request("/news/sentiment")
+            await MainActor.run { self.sentiment = sentiment }
+        } catch {}
+    }
+    
+    func analyzeNews(text: String) async {
+        await MainActor.run { isAnalyzing = true; errorMessage = nil }
+        do {
+            let request = NewsAnalyzeRequest(url: nil, text: text)
+            let response: NewsAnalyzeResponse = try await api.request("/news/analyze", method: "POST", body: request)
+            await MainActor.run { self.analysisResult = response; self.isAnalyzing = false }
+        } catch { await MainActor.run { errorMessage = error.localizedDescription; isAnalyzing = false } }
+    }
+}
+
+class NotificationsViewModel: ObservableObject {
+    @Published var notifications: [UserNotification] = []
+    @Published var unreadCount: Int = 0
+    @Published var preferences: NotificationPreferences?
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    private let api = APIClient.shared
+    
+    func loadNotifications() async {
+        await MainActor.run { isLoading = true }
+        do {
+            let notifications: [UserNotification] = try await api.request("/notifications?limit=50&unread=false")
+            await MainActor.run { self.notifications = notifications; self.isLoading = false }
+        } catch { await MainActor.run { isLoading = false } }
+    }
+    
+    func loadUnreadCount() async {
+        do {
+            let count: UnreadCount = try await api.request("/notifications/unread-count")
+            await MainActor.run { self.unreadCount = count.count ?? 0 }
+        } catch {}
+    }
+    
+    func markRead(id: String) async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/notifications/read", method: "PUT", body: ["id": id])
+            await loadNotifications(); await loadUnreadCount()
+        } catch {}
+    }
+    
+    func markAllRead() async {
+        do {
+            let _: ApiResponseWrapper = try await api.request("/notifications/read-all", method: "PUT")
+            await loadNotifications(); await loadUnreadCount()
+        } catch {}
+    }
+    
+    func loadPreferences() async {
+        do {
+            let prefs: NotificationPreferences = try await api.request("/notifications/preferences")
+            await MainActor.run { self.preferences = prefs }
+        } catch {}
+    }
+    
+    func updatePreferences(pushEnabled: Bool?, emailEnabled: Bool?, tradeAlerts: Bool?, signalAlerts: Bool?, newsAlerts: Bool?) async {
+        var body: [String: Any] = [:]
+        if let v = pushEnabled { body["pushEnabled"] = v }
+        if let v = emailEnabled { body["emailEnabled"] = v }
+        if let v = tradeAlerts { body["tradeAlerts"] = v }
+        if let v = signalAlerts { body["signalAlerts"] = v }
+        if let v = newsAlerts { body["newsAlerts"] = v }
+        do {
+            let _: ApiResponseWrapper = try await api.request("/notifications/preferences", method: "PUT", body: AnyCodable(value: body))
+            await loadPreferences()
+        } catch { await MainActor.run { errorMessage = error.localizedDescription } }
     }
 }
 
@@ -858,7 +1252,6 @@ struct AuthView: View {
             VStack(spacing: RouaTheme.Spacing.lg) {
                 Spacer()
                 
-                // Logo
                 VStack(spacing: RouaTheme.Spacing.lg) {
                     ZStack {
                         RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.xl).fill(RouaTheme.Colors.accentGradient).frame(width: 80, height: 80)
@@ -870,7 +1263,6 @@ struct AuthView: View {
                 
                 Spacer()
                 
-                // Auth Method Picker
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         ForEach(AuthMethod.allCases, id: \.self) { method in
@@ -886,21 +1278,16 @@ struct AuthView: View {
                     }.clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                     .padding(.bottom, RouaTheme.Spacing.lg)
                     
-                    // Auth Content
                     Group {
                         switch authMethod {
-                        case .google:
-                            googleSignInView
-                        case .passkey:
-                            passkeySignInView
-                        case .otp:
-                            otpSignInView
+                        case .google: googleSignInView
+                        case .passkey: passkeySignInView
+                        case .otp: otpSignInView
                         }
                     }
                     .animation(.easeInOut(duration: 0.2), value: authMethod)
                 }
                 
-                // Error Message
                 if let errorMessage = authManager.errorMessage {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RouaTheme.Colors.loss)
@@ -919,10 +1306,8 @@ struct AuthView: View {
         }
     }
     
-    // MARK: - Google Sign-In View
     private var googleSignInView: some View {
         VStack(spacing: RouaTheme.Spacing.lg) {
-            // Google Button
             Button {
                 authManager.signInWithGoogleSafari()
             } label: {
@@ -930,7 +1315,6 @@ struct AuthView: View {
                     if authManager.isGoogleLoading {
                         ProgressView().tint(.white).controlSize(.small)
                     } else {
-                        // Google "G" SVG
                         Image(systemName: "globe").font(.system(size: 18, weight: .bold)).foregroundStyle(RouaTheme.Colors.accentLight)
                     }
                     Text(authManager.isGoogleLoading ? "Connecting..." : "Sign in with Google")
@@ -946,7 +1330,6 @@ struct AuthView: View {
         }
     }
     
-    // MARK: - Passkey Sign-In View
     private var passkeySignInView: some View {
         VStack(spacing: RouaTheme.Spacing.lg) {
             Button {
@@ -971,10 +1354,8 @@ struct AuthView: View {
         }
     }
     
-    // MARK: - OTP Sign-In View
     private var otpSignInView: some View {
         VStack(spacing: RouaTheme.Spacing.lg) {
-            // Email Field
             HStack(spacing: RouaTheme.Spacing.md) {
                 Image(systemName: "envelope").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
                 TextField("Email Address", text: $email)
@@ -984,7 +1365,6 @@ struct AuthView: View {
             .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
             
             if authManager.otpSent {
-                // OTP Code Field
                 HStack(spacing: RouaTheme.Spacing.md) {
                     Image(systemName: "number.circle").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
                     TextField("Verification Code", text: $otpCode)
@@ -1016,7 +1396,6 @@ struct DashboardView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: RouaTheme.Spacing.lg) {
-                // Portfolio Summary
                 GlassCard {
                     VStack(spacing: RouaTheme.Spacing.md) {
                         HStack {
@@ -1037,7 +1416,6 @@ struct DashboardView: View {
                     }
                 }
                 
-                // Active Positions
                 Text("Active Positions").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
                 
                 if vm.positions.isEmpty {
@@ -1084,12 +1462,13 @@ struct StatMini: View {
 }
 
 // MARK: - ═══════════════════════════════════════
-// MARK: - TRADING VIEW
+// MARK: - TRADING VIEW (ENHANCED)
 // MARK: - ═══════════════════════════════════════
 
 struct TradingView: View {
     @StateObject private var vm = TradingViewModel()
     @State private var showOrderSheet = false
+    @State private var selectedSegment = 0
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -1116,29 +1495,86 @@ struct TradingView: View {
                 }
             }.padding(.horizontal, RouaTheme.Spacing.lg).padding(.vertical, RouaTheme.Spacing.md)
             
-            // Chart placeholder
-            ZStack {
-                RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md).fill(RouaTheme.Colors.surface).frame(height: 200)
-                Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 40)).foregroundStyle(RouaTheme.Colors.textTertiary)
-            }.padding(.horizontal, RouaTheme.Spacing.lg)
+            // Segment Picker
+            Picker("Segment", selection: $selectedSegment) {
+                Text("Positions").tag(0)
+                Text("Orders").tag(1)
+                Text("History").tag(2)
+            }.pickerStyle(.segmented).padding(.horizontal, RouaTheme.Spacing.lg).padding(.bottom, RouaTheme.Spacing.sm)
             
-            // Positions
+            // Content
             ScrollView {
                 VStack(spacing: RouaTheme.Spacing.md) {
-                    Text("Open Positions").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, RouaTheme.Spacing.lg)
-                    ForEach(vm.positions) { pos in
-                        GlassCard {
-                            HStack {
-                                Text(pos.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                                Spacer()
-                                Text(pos.side).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
-                                if let pnl = pos.unrealizedPnl { Text(String(format: "%+.2f", pnl)).font(.system(size: 13, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss) }
+                    switch selectedSegment {
+                    case 0:
+                        ForEach(vm.positions) { pos in
+                            GlassCard {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 6) {
+                                            Circle().fill(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss).frame(width: 8, height: 8)
+                                            Text(pos.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                            Text(pos.side).font(.system(size: 10, weight: .medium)).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                                        }
+                                        Text("Qty: \(String(format: "%.4f", pos.quantity))").font(.system(size: 11, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        if let pnl = pos.unrealizedPnl { Text(String(format: "%+.2f", pnl)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss) }
+                                        Text("Entry: \(String(format: "%.2f", pos.entryPrice))").font(.system(size: 11, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                }
                             }
                         }
+                        if vm.positions.isEmpty {
+                            GlassCard { Text("No open positions").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                        }
+                    case 1:
+                        ForEach(vm.orders) { order in
+                            GlassCard {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(order.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                        Text("\(order.side) · \(order.type)").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        if let status = order.status { Text(status.uppercased()).font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent) }
+                                        Button { Task { await vm.cancelOrder(id: order.id) } } label: {
+                                            Text("Cancel").font(.system(size: 11, weight: .medium)).foregroundStyle(RouaTheme.Colors.loss)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if vm.orders.isEmpty {
+                            GlassCard { Text("No open orders").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                        }
+                    case 2:
+                        ForEach(vm.trades) { trade in
+                            GlassCard {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(trade.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                        Text("\(trade.side) · \(trade.type)").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(String(format: "%.4f @ %.2f", trade.quantity, trade.price)).font(.system(size: 12, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                        if let pnl = trade.pnl { Text(String(format: "%+.2f", pnl)).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss) }
+                                    }
+                                }
+                            }
+                        }
+                        if vm.trades.isEmpty {
+                            GlassCard { Text("No trade history").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                        }
+                    default: EmptyView()
                     }
                 }.padding(RouaTheme.Spacing.lg)
             }
-        }.background(RouaTheme.Colors.background).task { await vm.loadTradingData() }
+        }.background(RouaTheme.Colors.background).task { await vm.loadTradingData(); await vm.loadOrders() }
+        .refreshable { await vm.loadTradingData(); await vm.loadOrders() }
         .sheet(isPresented: $showOrderSheet) { OrderSheet(vm: vm) }
     }
 }
@@ -1150,25 +1586,21 @@ struct OrderSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: RouaTheme.Spacing.lg) {
-                    // Buy/Sell Toggle
                     HStack(spacing: 0) {
                         Button { vm.orderSide = "BUY" } label: { Text("Buy").font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 44).foregroundStyle(vm.orderSide == "BUY" ? .white : RouaTheme.Colors.textTertiary).background(vm.orderSide == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.surfaceElevated) }
                         Button { vm.orderSide = "SELL" } label: { Text("Sell").font(.system(size: 14, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 44).foregroundStyle(vm.orderSide == "SELL" ? .white : RouaTheme.Colors.textTertiary).background(vm.orderSide == "SELL" ? RouaTheme.Colors.loss : RouaTheme.Colors.surfaceElevated) }
                     }.clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                     
-                    // Quantity
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Quantity").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textSecondary)
                         TextField("0.00", text: $vm.quantity).font(.system(size: 16, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary).keyboardType(.decimalPad).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                     }
                     
-                    // Stop Loss
                     VStack(alignment: .leading, spacing: 4) {
                         HStack { Text("Stop Loss").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textSecondary); Text("(Required)").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.loss) }
                         TextField("0.00", text: $vm.stopLoss).font(.system(size: 16, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.loss).keyboardType(.decimalPad).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                     }
                     
-                    // Take Profit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Take Profit").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textSecondary)
                         TextField("0.00", text: $vm.takeProfit).font(.system(size: 16, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.profit).keyboardType(.decimalPad).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
@@ -1192,13 +1624,17 @@ struct OrderSheet: View {
 }
 
 // MARK: - ═══════════════════════════════════════
-// MARK: - AI CHAT VIEW
+// MARK: - AI CHAT VIEW (ENHANCED)
 // MARK: - ═══════════════════════════════════════
 
 struct AIChatView: View {
     @StateObject private var vm = AIViewModel()
+    @State private var showModelPicker = false
+    @State private var showConsensus = false
+    @State private var consensusPrompt = ""
     var body: some View {
         VStack(spacing: 0) {
+            // Model bar
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: RouaTheme.Spacing.md) {
@@ -1206,66 +1642,215 @@ struct AIChatView: View {
                             let msg = vm.messages[i]
                             HStack {
                                 if msg.isUser { Spacer(minLength: 60) }
-                                Text(msg.content).font(.system(size: 14)).foregroundStyle(msg.isUser ? .white : RouaTheme.Colors.textPrimary)
-                                    .padding(RouaTheme.Spacing.md).background(msg.isUser ? RouaTheme.Colors.accent : RouaTheme.Colors.surfaceElevated)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                VStack(alignment: msg.isUser ? .trailing : .leading, spacing: 4) {
+                                    Text(msg.content).font(.system(size: 14)).foregroundStyle(msg.isUser ? .white : RouaTheme.Colors.textPrimary)
+                                        .padding(RouaTheme.Spacing.md).background(msg.isUser ? RouaTheme.Colors.accent : RouaTheme.Colors.surfaceElevated)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    if let model = msg.model, !msg.isUser {
+                                        Text(model).font(.system(size: 9, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary).padding(.horizontal, 4)
+                                    }
+                                }
                                 if !msg.isUser { Spacer(minLength: 60) }
                             }.id(i)
                         }
-                        if vm.isLoading { Text("AI is thinking...").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary).padding(.leading, 16) }
+                        if vm.isLoading { HStack(spacing: 8) { PulsingDot(); Text("AI is thinking...").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary) }.padding(.leading, 16) }
+                        
+                        // Consensus result
+                        if let consensus = vm.consensusResult {
+                            GlassCard {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack { Image(systemName: "brain.head.profile").foregroundStyle(RouaTheme.Colors.accent); Text("AI Consensus").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                                    if let c = consensus.consensus { Text(c).font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary) }
+                                }
+                            }
+                        }
                     }.padding(RouaTheme.Spacing.lg)
                 }.onChange(of: vm.messages.count) { _, _ in withAnimation { proxy.scrollTo(vm.messages.count - 1, anchor: .bottom) } }
             }
             
             HStack(spacing: RouaTheme.Spacing.md) {
+                Button { showConsensus = true } label: {
+                    Image(systemName: "brain.head.profile").font(.system(size: 20)).foregroundStyle(RouaTheme.Colors.accent)
+                }
                 TextField("Ask AI...", text: $vm.inputText).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary).tint(RouaTheme.Colors.accent).submitLabel(.send).onSubmit { Task { await vm.sendMessage() } }
                 Button { Task { await vm.sendMessage() } } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(vm.inputText.isEmpty ? RouaTheme.Colors.textTertiary : RouaTheme.Colors.accent) }
                 .disabled(vm.inputText.isEmpty || vm.isLoading)
             }.padding(RouaTheme.Spacing.md).background(RouaTheme.Colors.surface).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, RouaTheme.Spacing.lg).padding(.vertical, RouaTheme.Spacing.sm)
         }.background(RouaTheme.Colors.background).navigationTitle("AI Assistant")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    ForEach(vm.availableModels, id: \.name) { model in
+                        Button { vm.selectedModel = model.name } label: {
+                            HStack { Text(model.name); if vm.selectedModel == model.name { Image(systemName: "checkmark") } }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "cpu").foregroundStyle(RouaTheme.Colors.accent)
+                }
+            }
+        }
+        .task { await vm.loadModels() }
+        .alert("AI Consensus", isPresented: $showConsensus) {
+            TextField("Enter prompt for consensus", text: $consensusPrompt)
+            Button("Run") { Task { await vm.runConsensus(prompt: consensusPrompt); consensusPrompt = "" } }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 
 // MARK: - ═══════════════════════════════════════
-// MARK: - SCANNER VIEW
+// MARK: - SCANNER VIEW (ENHANCED)
 // MARK: - ═══════════════════════════════════════
 
 struct ScannerView: View {
     @StateObject private var vm = ScannerViewModel()
+    @State private var showAnalysis = false
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: RouaTheme.Spacing.lg) {
                 Text("Market Scanner").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Overview
+                if let overview = vm.overview {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("Market Overview").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: RouaTheme.Spacing.lg) {
+                                StatMini(title: "Bullish", value: "\(overview.bullish ?? 0)", isPositive: true)
+                                StatMini(title: "Bearish", value: "\(overview.bearish ?? 0)", isPositive: false)
+                                StatMini(title: "Neutral", value: "\(overview.neutral ?? 0)")
+                            }
+                            HStack {
+                                if let gainer = overview.topGainer { Text("Top Gainer: \(gainer)").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.profit) }
+                                Spacer()
+                                if let loser = overview.topLoser { Text("Top Loser: \(loser)").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.loss) }
+                            }
+                        }
+                    }
+                }
+                
+                // Filters
+                HStack(spacing: RouaTheme.Spacing.md) {
+                    Picker("Timeframe", selection: $vm.timeframe) {
+                        ForEach(["5m", "15m", "1h", "4h", "1d"], id: \.self) { Text($0) }
+                    }.pickerStyle(.menu).tint(RouaTheme.Colors.accent)
+                    
+                    Picker("Category", selection: $vm.category) {
+                        ForEach(["crypto", "forex", "stocks"], id: \.self) { Text($0.capitalized) }
+                    }.pickerStyle(.menu).tint(RouaTheme.Colors.accent)
+                    
+                    Spacer()
+                    
+                    Button { Task { await vm.runScan() } } label: {
+                        Image(systemName: "arrow.clockwise").foregroundStyle(RouaTheme.Colors.accent)
+                    }
+                }.padding(.horizontal, RouaTheme.Spacing.xs)
+                
+                // Scan Results
                 ForEach(vm.results) { r in
                     GlassCard {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(r.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                                if let n = r.name { Text(n).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(1) }
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(String(format: "%.2f", r.price)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                                ChangeBadge(value: r.changePercent)
+                        Button { Task { await vm.loadAnalysis(symbol: r.symbol); showAnalysis = true } } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(r.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                    if let n = r.name { Text(n).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(1) }
+                                    if let signal = r.signal { Text(signal.uppercased()).font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent) }
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(String(format: "%.2f", r.price)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                    ChangeBadge(value: r.changePercent)
+                                }
                             }
                         }
                     }
                 }
             }.padding(RouaTheme.Spacing.lg)
-        }.background(RouaTheme.Colors.background).task { await vm.runScan() }.refreshable { await vm.runScan() }
+        }.background(RouaTheme.Colors.background).task { await vm.runScan(); await vm.loadOverview() }.refreshable { await vm.runScan() }
+        .sheet(isPresented: $showAnalysis) {
+            NavigationStack {
+                SymbolAnalysisView(vm: vm)
+            }
+        }
+    }
+}
+
+struct SymbolAnalysisView: View {
+    @ObservedObject var vm: ScannerViewModel
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        ScrollView {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                if let analysis = vm.symbolAnalysis {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text(analysis.symbol).font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                            if let price = analysis.price { Text(String(format: "$%.2f", price)).font(.system(size: 18, weight: .bold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                            if let change = analysis.change { ChangeBadge(value: change) }
+                        }
+                    }
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            if let rec = analysis.recommendation {
+                                HStack { Text("Recommendation").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(rec.uppercased()).font(.system(size: 14, weight: .semibold)).foregroundStyle(rec.lowercased() == "buy" ? RouaTheme.Colors.profit : rec.lowercased() == "sell" ? RouaTheme.Colors.loss : RouaTheme.Colors.warning) }
+                            }
+                            if let conf = analysis.confidence {
+                                HStack { Text("Confidence").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "%.0f%%", conf * 100)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                            }
+                            if let support = analysis.support {
+                                HStack { Text("Support").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "%.2f", support)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RouaTheme.Colors.profit) }
+                            }
+                            if let resistance = analysis.resistance {
+                                HStack { Text("Resistance").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "%.2f", resistance)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RouaTheme.Colors.loss) }
+                            }
+                        }
+                    }
+                } else {
+                    GlassCard { Text("No analysis available").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary) }
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).navigationTitle("Analysis").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
     }
 }
 
 // MARK: - ═══════════════════════════════════════
-// MARK: - PORTFOLIO VIEW
+// MARK: - PORTFOLIO VIEW (ENHANCED)
 // MARK: - ═══════════════════════════════════════
 
 struct PortfolioView: View {
     @StateObject private var vm = PortfolioViewModel()
+    @State private var showDeleteAlert = false
+    @State private var credentialToDelete: String?
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: RouaTheme.Spacing.lg) {
                 Text("Portfolio").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Balances
+                if !vm.balances.isEmpty {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("Balances").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(vm.balances) { bal in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(bal.exchange?.uppercased() ?? "Exchange").font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                        Text(bal.currency?.uppercased() ?? "USD").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        if let total = bal.totalBalance { Text(String(format: "$%.2f", total)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                                        if let avail = bal.availableBalance { Text("Avail: \(String(format: "%.2f", avail))").font(.system(size: 11, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary) }
+                                    }
+                                }.padding(.vertical, 4)
+                            }
+                        }
+                    }
+                }
+                
+                // Exchange Accounts
                 GlassCard {
                     VStack(spacing: RouaTheme.Spacing.md) {
                         Text("Exchange Accounts").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
@@ -1276,13 +1861,44 @@ struct PortfolioView: View {
                                     Text(cred.exchange.uppercased()).font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
                                 }
                                 Spacer()
-                                if cred.testnet { Text("TESTNET").font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.warning).padding(.horizontal, 8).padding(.vertical, 3).background(RouaTheme.Colors.warningBackground).clipShape(Capsule()) }
+                                HStack(spacing: 8) {
+                                    if cred.testnet { Text("TESTNET").font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.warning).padding(.horizontal, 8).padding(.vertical, 3).background(RouaTheme.Colors.warningBackground).clipShape(Capsule()) }
+                                    Button { credentialToDelete = cred.id; showDeleteAlert = true } label: {
+                                        Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss)
+                                    }
+                                }
                             }.padding(.vertical, 4)
+                        }
+                        if vm.credentials.isEmpty {
+                            Text("No exchange accounts linked").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                
+                // Sanctuary
+                if let sanctuary = vm.sanctuary {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            HStack { Image(systemName: "shield.checkered").foregroundStyle(RouaTheme.Colors.accent); Text("Sanctuary").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                            if let enabled = sanctuary.enabled {
+                                HStack { Text("Status").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(enabled ? "Active" : "Inactive").font(.system(size: 13, weight: .medium)).foregroundStyle(enabled ? RouaTheme.Colors.profit : RouaTheme.Colors.loss) }
+                            }
+                            if let risk = sanctuary.riskScore {
+                                HStack { Text("Risk Score").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "%.0f%%", risk * 100)).font(.system(size: 13, design: .monospaced)).foregroundStyle(risk > 0.7 ? RouaTheme.Colors.loss : RouaTheme.Colors.warning) }
+                            }
+                            if let protected = sanctuary.protectedAmount {
+                                HStack { Text("Protected").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "$%.2f", protected)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RouaTheme.Colors.profit) }
+                            }
                         }
                     }
                 }
             }.padding(RouaTheme.Spacing.lg)
-        }.background(RouaTheme.Colors.background).task { await vm.loadData() }
+        }.background(RouaTheme.Colors.background).task { await vm.loadData(); await vm.loadBalances(); await vm.loadSanctuary() }
+        .refreshable { await vm.loadData(); await vm.loadBalances(); await vm.loadSanctuary() }
+        .alert("Delete Credential", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) { if let id = credentialToDelete { Task { await vm.deleteCredential(id: id) } } }
+            Button("Cancel", role: .cancel) { credentialToDelete = nil }
+        } message: { Text("Are you sure? This will remove the exchange credential.") }
     }
 }
 
@@ -1322,6 +1938,527 @@ struct SettingsView: View {
 }
 
 // MARK: - ═══════════════════════════════════════
+// MARK: - AGENT VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct AgentView: View {
+    @StateObject private var vm = AgentViewModel()
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                Text("AI Agent Trader").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Status Card
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Status").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                HStack(spacing: 8) {
+                                    if vm.status?.running == true { PulsingDot() } else { Circle().fill(RouaTheme.Colors.textTertiary).frame(width: 8, height: 8) }
+                                    Text(vm.status?.running == true ? "Running" : "Stopped").font(.system(size: 18, weight: .semibold)).foregroundStyle(vm.status?.running == true ? RouaTheme.Colors.profit : RouaTheme.Colors.textSecondary)
+                                }
+                            }
+                            Spacer()
+                            if let strategy = vm.status?.strategy {
+                                Text(strategy.capitalized).font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent).padding(.horizontal, 10).padding(.vertical, 4).background(RouaTheme.Colors.accent.opacity(0.15)).clipShape(Capsule())
+                            }
+                        }
+                        HStack(spacing: RouaTheme.Spacing.lg) {
+                            if let trades = vm.status?.tradesCount { StatMini(title: "Trades", value: "\(trades)") }
+                            if let pnl = vm.status?.pnl { StatMini(title: "P&L", value: String(format: "$%.2f", pnl), isPositive: pnl >= 0) }
+                            if let startedAt = vm.status?.startedAt { StatMini(title: "Started", value: String(startedAt.prefix(10))) }
+                        }
+                    }
+                }
+                
+                // Performance
+                if let perf = vm.performance {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("Performance").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: RouaTheme.Spacing.lg) {
+                                if let wr = perf.winRate { StatMini(title: "Win Rate", value: String(format: "%.0f%%", wr * 100), isPositive: wr > 0.5) }
+                                if let sr = perf.sharpeRatio { StatMini(title: "Sharpe", value: String(format: "%.2f", sr)) }
+                                if let dd = perf.maxDrawdown { StatMini(title: "Max DD", value: String(format: "%.1f%%", dd * 100), isPositive: false) }
+                            }
+                            if let totalPnl = perf.totalPnl {
+                                HStack { Text("Total P&L").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "$%.2f", totalPnl)).font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundStyle(totalPnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss) }
+                            }
+                        }
+                    }
+                }
+                
+                // Strategy Selection
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Strategy").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        Picker("Strategy", selection: $vm.selectedStrategy) {
+                            ForEach(["momentum", "mean-reversion", "breakout", "scalping", "swing"], id: \.self) { s in Text(s.capitalized).tag(s) }
+                        }.pickerStyle(.segmented)
+                        TradingButton(title: "Update Strategy", style: .primary, isLoading: false) { Task { await vm.updateStrategy() } }
+                    }
+                }
+                
+                // Settings
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Settings").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack { Text("Max Position Size").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); TextField("100", text: $vm.maxPositionSize).font(.system(size: 13, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary).keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 80) }
+                        HStack { Text("Risk Level").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Picker("", selection: $vm.riskLevel) { ForEach(["low", "medium", "high"], id: \.self) { Text($0.capitalized).tag($0) } }.pickerStyle(.menu) }
+                        TradingButton(title: "Save Settings", style: .secondary, isLoading: false) { Task { await vm.updateSettings() } }
+                    }
+                }
+                
+                // Start / Stop
+                HStack(spacing: RouaTheme.Spacing.md) {
+                    TradingButton(title: "Start Agent", style: .buy, isLoading: vm.isToggling) { Task { await vm.startAgent() } }
+                    TradingButton(title: "Stop Agent", style: .danger, isLoading: vm.isToggling) { Task { await vm.stopAgent() } }
+                }
+                
+                if let err = vm.errorMessage {
+                    Text(err).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss).padding().frame(maxWidth: .infinity, alignment: .leading).background(RouaTheme.Colors.lossBackground).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadStatus(); await vm.loadPerformance(); await vm.loadSettings() }
+        .refreshable { await vm.loadStatus(); await vm.loadPerformance() }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - SIGNALS VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct SignalsView: View {
+    @StateObject private var vm = SignalsViewModel()
+    @State private var selectedTab = 0
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                Text("Trading Signals").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Generate Signal
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Generate Signal").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            TextField("Pair (e.g. BTC/USDT)", text: $vm.generatePair).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary).tint(RouaTheme.Colors.accent).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                        }
+                        TradingButton(title: "Generate Signal", style: .primary, isLoading: vm.isGenerating) { Task { await vm.generateSignal() } }
+                    }
+                }
+                
+                // Tab Picker
+                Picker("Signals", selection: $selectedTab) {
+                    Text("Active").tag(0)
+                    Text("History").tag(1)
+                }.pickerStyle(.segmented)
+                
+                // Active / History
+                let signals = selectedTab == 0 ? vm.activeSignals : vm.signalHistory
+                ForEach(signals) { signal in
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.sm) {
+                            HStack {
+                                Text(signal.pair).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                Spacer()
+                                if let dir = signal.direction {
+                                    Text(dir.uppercased()).font(.system(size: 12, weight: .semibold)).foregroundStyle(dir.lowercased() == "buy" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                                        .padding(.horizontal, 8).padding(.vertical, 3).background(dir.lowercased() == "buy" ? RouaTheme.Colors.profitBackground : RouaTheme.Colors.lossBackground).clipShape(Capsule())
+                                }
+                            }
+                            HStack(spacing: RouaTheme.Spacing.lg) {
+                                if let ep = signal.entryPrice { StatMini(title: "Entry", value: String(format: "%.2f", ep)) }
+                                if let sl = signal.stopLoss { StatMini(title: "Stop", value: String(format: "%.2f", sl), isPositive: false) }
+                                if let tp = signal.takeProfit { StatMini(title: "Target", value: String(format: "%.2f", tp), isPositive: true) }
+                                if let conf = signal.confidence { StatMini(title: "Confidence", value: String(format: "%.0f%%", conf * 100)) }
+                            }
+                            if selectedTab == 0 {
+                                TradingButton(title: "Execute Signal", style: .primary, isLoading: false) { Task { await vm.executeSignal(id: signal.id) } }
+                            }
+                        }
+                    }
+                }
+                
+                if signals.isEmpty {
+                    GlassCard { Text(selectedTab == 0 ? "No active signals" : "No signal history").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                }
+                
+                if let err = vm.errorMessage {
+                    Text(err).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss).padding().frame(maxWidth: .infinity, alignment: .leading).background(RouaTheme.Colors.lossBackground).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadActiveSignals(); await vm.loadHistory() }
+        .refreshable { await vm.loadActiveSignals(); await vm.loadHistory() }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - EXECUTOR VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct ExecutorView: View {
+    @StateObject private var vm = ExecutorViewModel()
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                Text("Smart Executor").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Status
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Executor Status").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                HStack(spacing: 8) {
+                                    if vm.status?.active == true { PulsingDot() } else { Circle().fill(RouaTheme.Colors.textTertiary).frame(width: 8, height: 8) }
+                                    Text(vm.status?.active == true ? "Active" : "Inactive").font(.system(size: 18, weight: .semibold)).foregroundStyle(vm.status?.active == true ? RouaTheme.Colors.profit : RouaTheme.Colors.textSecondary)
+                                }
+                            }
+                            Spacer()
+                            if let mode = vm.status?.mode {
+                                Text(mode.uppercased()).font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent).padding(.horizontal, 10).padding(.vertical, 4).background(RouaTheme.Colors.accent.opacity(0.15)).clipShape(Capsule())
+                            }
+                        }
+                        HStack(spacing: RouaTheme.Spacing.lg) {
+                            if let trades = vm.status?.tradesExecuted { StatMini(title: "Trades", value: "\(trades)") }
+                            if let pnl = vm.status?.pnl { StatMini(title: "P&L", value: String(format: "$%.2f", pnl), isPositive: pnl >= 0) }
+                        }
+                    }
+                }
+                
+                // Exposure
+                if let exposure = vm.exposure {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("Exposure").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            if let total = exposure.totalExposure { HStack { Text("Total Exposure").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text(String(format: "$%.2f", total)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) } }
+                            if let max = exposure.maxExposure { HStack { Text("Max Exposure").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text(String(format: "$%.2f", max)).font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary) } }
+                            if let pos = exposure.positions { HStack { Text("Open Positions").font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("\(pos)").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) } }
+                        }
+                    }
+                }
+                
+                // User Enable/Disable
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Your Executor").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            Text(vm.userEnabled == true ? "Enabled" : "Disabled").font(.system(size: 14, weight: .medium)).foregroundStyle(vm.userEnabled == true ? RouaTheme.Colors.profit : RouaTheme.Colors.textSecondary)
+                            Spacer()
+                            if vm.userEnabled == true {
+                                TradingButton(title: "Disable", style: .secondary, isLoading: false) { Task { await vm.disableUser() } }
+                            } else {
+                                TradingButton(title: "Enable", style: .primary, isLoading: false) { Task { await vm.enableUser() } }
+                            }
+                        }
+                    }
+                }
+                
+                // Controls
+                HStack(spacing: RouaTheme.Spacing.md) {
+                    TradingButton(title: "Start", style: .buy, isLoading: vm.isToggling) { Task { await vm.start() } }
+                    TradingButton(title: "Stop", style: .danger, isLoading: vm.isToggling) { Task { await vm.stop() } }
+                }
+                TradingButton(title: "Emergency Stop", style: .danger, isLoading: false) { Task { await vm.emergencyStop() } }
+                
+                if let err = vm.errorMessage {
+                    Text(err).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss).padding().frame(maxWidth: .infinity, alignment: .leading).background(RouaTheme.Colors.lossBackground).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadStatus(); await vm.loadExposure(); await vm.loadUserStatus() }
+        .refreshable { await vm.loadStatus(); await vm.loadExposure() }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - COUNCIL VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct CouncilView: View {
+    @StateObject private var vm = CouncilViewModel()
+    @State private var selectedTab = 0
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                Text("Strategic Council").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Trigger
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Trigger Council").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            TextField("Symbol (optional)", text: $vm.triggerSymbol).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary).tint(RouaTheme.Colors.accent).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                        }
+                        TradingButton(title: "Trigger New Council", style: .primary, isLoading: vm.isTriggering) { Task { await vm.triggerCouncil() } }
+                    }
+                }
+                
+                Picker("Briefs", selection: $selectedTab) {
+                    Text("Active").tag(0)
+                    Text("History").tag(1)
+                }.pickerStyle(.segmented)
+                
+                let briefs = selectedTab == 0 ? vm.activeBriefs : vm.briefHistory
+                ForEach(briefs) { brief in
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.sm) {
+                            HStack {
+                                Text(brief.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                Spacer()
+                                if let action = brief.action {
+                                    Text(action.uppercased()).font(.system(size: 12, weight: .semibold)).foregroundStyle(action.lowercased() == "buy" ? RouaTheme.Colors.profit : action.lowercased() == "sell" ? RouaTheme.Colors.loss : RouaTheme.Colors.warning)
+                                        .padding(.horizontal, 8).padding(.vertical, 3).background(action.lowercased() == "buy" ? RouaTheme.Colors.profitBackground : action.lowercased() == "sell" ? RouaTheme.Colors.lossBackground : RouaTheme.Colors.warningBackground).clipShape(Capsule())
+                                }
+                            }
+                            if let title = brief.title { Text(title).font(.system(size: 13)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity, alignment: .leading) }
+                            if let summary = brief.summary { Text(summary).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading) }
+                            HStack(spacing: RouaTheme.Spacing.lg) {
+                                if let conf = brief.confidence { StatMini(title: "Confidence", value: String(format: "%.0f%%", conf * 100)) }
+                                if let date = brief.createdAt { StatMini(title: "Date", value: String(date.prefix(10))) }
+                            }
+                        }
+                    }
+                }
+                
+                if briefs.isEmpty {
+                    GlassCard { Text(selectedTab == 0 ? "No active briefs" : "No brief history").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                }
+                
+                if let err = vm.errorMessage {
+                    Text(err).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.loss).padding().frame(maxWidth: .infinity, alignment: .leading).background(RouaTheme.Colors.lossBackground).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadActiveBriefs(); await vm.loadHistory() }
+        .refreshable { await vm.loadActiveBriefs(); await vm.loadHistory() }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - NEWS VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct NewsView: View {
+    @StateObject private var vm = NewsViewModel()
+    @State private var analyzeText = ""
+    @State private var showAnalyze = false
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                Text("Market News").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Sentiment Gauge
+                if let sentiment = vm.sentiment {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("Market Sentiment").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: RouaTheme.Spacing.xl) {
+                                if let overall = sentiment.overall {
+                                    VStack(spacing: 4) {
+                                        Text(overall.capitalized).font(.system(size: 20, weight: .bold)).foregroundStyle(overall.lowercased() == "bullish" ? RouaTheme.Colors.profit : overall.lowercased() == "bearish" ? RouaTheme.Colors.loss : RouaTheme.Colors.warning)
+                                        Text("Overall").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                }
+                                if let score = sentiment.score {
+                                    VStack(spacing: 4) {
+                                        Text(String(format: "%.0f", score * 100)).font(.system(size: 20, weight: .bold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                        Text("Score").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                }
+                                if let fgi = sentiment.fearGreedIndex {
+                                    VStack(spacing: 4) {
+                                        Text("\(fgi)").font(.system(size: 20, weight: .bold, design: .monospaced)).foregroundStyle(fgi > 60 ? RouaTheme.Colors.profit : fgi < 40 ? RouaTheme.Colors.loss : RouaTheme.Colors.warning)
+                                        Text("Fear/Greed").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Symbol Filter
+                HStack {
+                    TextField("Filter by symbol", text: $vm.symbol).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary).tint(RouaTheme.Colors.accent).padding().background(RouaTheme.Colors.surfaceElevated).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                    Button { Task { await vm.loadLatest() } } label: { Image(systemName: "arrow.clockwise").foregroundStyle(RouaTheme.Colors.accent).padding() }
+                }
+                
+                // Analyze Button
+                Button { showAnalyze = true } label: {
+                    HStack { Image(systemName: "text.magnifyingglass"); Text("Analyze News Text") }.font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent).frame(maxWidth: .infinity).padding().background(RouaTheme.Colors.accent.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
+                }
+                
+                // Analysis Result
+                if let result = vm.analysisResult {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.sm) {
+                            Text("Analysis Result").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            if let sent = result.sentiment { HStack { Text("Sentiment").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(sent.capitalized).font(.system(size: 13, weight: .medium)).foregroundStyle(sent.lowercased() == "positive" ? RouaTheme.Colors.profit : sent.lowercased() == "negative" ? RouaTheme.Colors.loss : RouaTheme.Colors.warning) } }
+                            if let score = result.score { HStack { Text("Score").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary); Spacer(); Text(String(format: "%.2f", score)).font(.system(size: 13, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) } }
+                            if let summary = result.summary { Text(summary).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity, alignment: .leading) }
+                        }
+                    }
+                }
+                
+                // Articles
+                ForEach(vm.articles) { article in
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.sm) {
+                            Text(article.title).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            if let summary = article.summary { Text(summary).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading) }
+                            HStack {
+                                if let source = article.source { Text(source).font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary) }
+                                Spacer()
+                                if let sentiment = article.sentiment {
+                                    Text(sentiment.capitalized).font(.system(size: 10, weight: .medium)).foregroundStyle(sentiment.lowercased() == "positive" ? RouaTheme.Colors.profit : sentiment.lowercased() == "negative" ? RouaTheme.Colors.loss : RouaTheme.Colors.warning)
+                                }
+                                if let date = article.publishedAt { Text(String(date.prefix(10))).font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary) }
+                            }
+                        }
+                    }
+                }
+                
+                if vm.articles.isEmpty && !vm.isLoading {
+                    GlassCard { Text("No news articles").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadLatest(); await vm.loadSentiment() }
+        .refreshable { await vm.loadLatest(); await vm.loadSentiment() }
+        .alert("Analyze News", isPresented: $showAnalyze) {
+            TextField("Paste news text", text: $analyzeText)
+            Button("Analyze") { Task { await vm.analyzeNews(text: analyzeText); analyzeText = "" } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - NOTIFICATIONS VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct NotificationsView: View {
+    @StateObject private var vm = NotificationsViewModel()
+    @State private var pushEnabled = true
+    @State private var tradeAlerts = true
+    @State private var signalAlerts = true
+    @State private var newsAlerts = false
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: RouaTheme.Spacing.lg) {
+                HStack {
+                    Text("Notifications").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                    Spacer()
+                    if vm.unreadCount > 0 {
+                        Text("\(vm.unreadCount)").font(.system(size: 12, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4).background(RouaTheme.Colors.accent).clipShape(Capsule())
+                    }
+                    Button { Task { await vm.markAllRead() } } label: {
+                        Text("Mark All Read").font(.system(size: 12, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent)
+                    }
+                }
+                
+                // Preferences
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        Text("Preferences").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                        Toggle(isOn: $pushEnabled) { Text("Push Notifications").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary) }.tint(RouaTheme.Colors.accent).onChange(of: pushEnabled) { _, newVal in Task { await vm.updatePreferences(pushEnabled: newVal, emailEnabled: nil, tradeAlerts: nil, signalAlerts: nil, newsAlerts: nil) } }
+                        Toggle(isOn: $tradeAlerts) { Text("Trade Alerts").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary) }.tint(RouaTheme.Colors.accent).onChange(of: tradeAlerts) { _, newVal in Task { await vm.updatePreferences(pushEnabled: nil, emailEnabled: nil, tradeAlerts: newVal, signalAlerts: nil, newsAlerts: nil) } }
+                        Toggle(isOn: $signalAlerts) { Text("Signal Alerts").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary) }.tint(RouaTheme.Colors.accent).onChange(of: signalAlerts) { _, newVal in Task { await vm.updatePreferences(pushEnabled: nil, emailEnabled: nil, tradeAlerts: nil, signalAlerts: newVal, newsAlerts: nil) } }
+                        Toggle(isOn: $newsAlerts) { Text("News Alerts").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary) }.tint(RouaTheme.Colors.accent).onChange(of: newsAlerts) { _, newVal in Task { await vm.updatePreferences(pushEnabled: nil, emailEnabled: nil, tradeAlerts: nil, signalAlerts: nil, newsAlerts: newVal) } }
+                    }
+                }
+                
+                // Notification List
+                ForEach(vm.notifications) { notif in
+                    GlassCard {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    if !notif.isRead { Circle().fill(RouaTheme.Colors.accent).frame(width: 6, height: 6) }
+                                    Text(notif.title).font(.system(size: 14, weight: notif.isRead ? .regular : .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                }
+                                if let body = notif.body { Text(body).font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textSecondary).lineLimit(2) }
+                                Text(String(notif.createdAt.prefix(16))).font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
+                            }
+                            Spacer()
+                            if !notif.isRead {
+                                Button { Task { await vm.markRead(id: notif.id) } } label: {
+                                    Image(systemName: "checkmark.circle").foregroundStyle(RouaTheme.Colors.accent)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if vm.notifications.isEmpty && !vm.isLoading {
+                    GlassCard { Text("No notifications").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary).frame(maxWidth: .infinity) }
+                }
+            }.padding(RouaTheme.Spacing.lg)
+        }.background(RouaTheme.Colors.background).task { await vm.loadNotifications(); await vm.loadUnreadCount(); await vm.loadPreferences() }
+        .refreshable { await vm.loadNotifications(); await vm.loadUnreadCount() }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
+// MARK: - MORE MENU VIEW
+// MARK: - ═══════════════════════════════════════
+
+struct MoreMenuView: View {
+    struct MenuItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let icon: String
+        let color: Color
+        let destination: MoreDestination
+    }
+    
+    enum MoreDestination {
+        case portfolio, scanner, agent, signals, executor, council, news, notifications, settings
+    }
+    
+    let menuItems: [MenuItem] = [
+        MenuItem(title: "Portfolio", icon: "wallet.pass", color: RouaTheme.Colors.accent, destination: .portfolio),
+        MenuItem(title: "Scanner", icon: "magnifyingglass", color: RouaTheme.Colors.info, destination: .scanner),
+        MenuItem(title: "AI Agent", icon: "robot", color: RouaTheme.Colors.profit, destination: .agent),
+        MenuItem(title: "Signals", icon: "antenna.radiowaves.left.and.right", color: RouaTheme.Colors.warning, destination: .signals),
+        MenuItem(title: "Smart Executor", icon: "bolt.circle", color: RouaTheme.Colors.accentLight, destination: .executor),
+        MenuItem(title: "Strategic Council", icon: "person.3", color: Color(hex: "8B5CF6"), destination: .council),
+        MenuItem(title: "News", icon: "newspaper", color: RouaTheme.Colors.info, destination: .news),
+        MenuItem(title: "Notifications", icon: "bell", color: RouaTheme.Colors.warning, destination: .notifications),
+        MenuItem(title: "Settings", icon: "gearshape", color: RouaTheme.Colors.textTertiary, destination: .settings)
+    ]
+    
+    var body: some View {
+        List(menuItems) { item in
+            NavigationLink(value: item.destination) {
+                HStack(spacing: RouaTheme.Spacing.lg) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md).fill(item.color.opacity(0.15)).frame(width: 40, height: 40)
+                        Image(systemName: item.icon).font(.system(size: 16, weight: .medium)).foregroundStyle(item.color)
+                    }
+                    Text(item.title).font(.system(size: 16, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                }
+                .padding(.vertical, RouaTheme.Spacing.xs)
+                .listRowBackground(Color.clear)
+            }
+        }.listStyle(.plain)
+        .background(RouaTheme.Colors.background)
+        .navigationTitle("More")
+        .navigationDestination(for: MoreDestination.self) { destination in
+            switch destination {
+            case .portfolio: PortfolioView()
+            case .scanner: ScannerView()
+            case .agent: AgentView()
+            case .signals: SignalsView()
+            case .executor: ExecutorView()
+            case .council: CouncilView()
+            case .news: NewsView()
+            case .notifications: NotificationsView()
+            case .settings: SettingsView()
+            }
+        }
+    }
+}
+
+// MARK: - ═══════════════════════════════════════
 // MARK: - TAB BAR & NAVIGATION
 // MARK: - ═══════════════════════════════════════
 
@@ -1334,8 +2471,7 @@ struct TabBarView: View {
                 case 0: NavigationStack { DashboardView() }
                 case 1: NavigationStack { TradingView() }
                 case 2: NavigationStack { AIChatView() }
-                case 3: NavigationStack { PortfolioView() }
-                case 4: NavigationStack { SettingsView() }
+                case 3: NavigationStack { MoreMenuView() }
                 default: EmptyView()
                 }
             }.padding(.bottom, 80)
@@ -1343,7 +2479,7 @@ struct TabBarView: View {
             VStack(spacing: 0) {
                 Divider().background(RouaTheme.Colors.border)
                 HStack {
-                    ForEach(0..<5) { i in
+                    ForEach(0..<4, id: \.self) { i in
                         tabItem(i)
                     }
                 }.padding(.horizontal, RouaTheme.Spacing.md).padding(.top, RouaTheme.Spacing.sm).padding(.bottom, RouaTheme.Spacing.lg)
@@ -1352,7 +2488,7 @@ struct TabBarView: View {
         }.background(RouaTheme.Colors.background)
     }
     
-    private let tabs = [("Dashboard", "square.grid.2x2"), ("Trade", "chart.line.uptrend.xyaxis"), ("AI", "brain"), ("Portfolio", "wallet.pass"), ("Settings", "gearshape")]
+    private let tabs = [("Dashboard", "square.grid.2x2"), ("Trade", "chart.line.uptrend.xyaxis"), ("AI", "brain"), ("More", "ellipsis")]
     
     private func tabItem(_ index: Int) -> some View {
         Button { withAnimation(.easeInOut(duration: 0.2)) { selectedTab = index } } label: {

@@ -12,10 +12,12 @@ struct RouaTradingApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if authManager.isAuthenticated {
-                TabBarView()
-            } else {
-                AuthView()
+            Group {
+                if authManager.isAuthenticated {
+                    TabBarView()
+                } else {
+                    AuthView()
+                }
             }
             .tint(RouaTheme.Colors.accent)
             .preferredColorScheme(.dark)
@@ -340,7 +342,7 @@ class AuthManager: ObservableObject {
     func login(email: String) async {
         await MainActor.run { isLoading = true; error = nil }
         do {
-            let body: [String: String] = ["email": email]
+            let _: [String: String] = ["email": email]
             let _: Data = try await api.request("/auth/challenge?email=\(email)")
             await MainActor.run { isLoading = false }
         } catch {

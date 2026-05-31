@@ -175,6 +175,6 @@ class ChartCoordinator {
         candlestickSeries?.setData(data: candlestickData)
         volumeSeries?.setData(data: volumeData)
 
-        chart?.timeScale.fitContent()
+        chart?.timeScale().fitContent()
     }
 }

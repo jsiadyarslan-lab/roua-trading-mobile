@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import UIKit
+import ObjectiveC
 
 // MARK: - Auth Service
 @MainActor
@@ -78,6 +79,7 @@ class AuthService: ObservableObject {
 
         do {
             let callbackURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                let presenter = WebAuthPresenter(window: WebAuthPresenter.findWindow())
                 let session = ASWebAuthenticationSession(
                     url: authURL,
                     callbackURLScheme: "roua"
@@ -91,7 +93,9 @@ class AuthService: ObservableObject {
                     }
                 }
                 session.prefersEphemeralWebBrowserSession = false
-                session.presentationContextProvider = Self.shared
+                session.presentationContextProvider = presenter
+                // Retain presenter via associated object on session to prevent dealloc
+                objc_setAssociatedObject(session, &AssociatedKeys.webAuthPresenter, presenter, .OBJC_ASSOCIATION_RETAIN)
                 session.start()
             }
 
@@ -184,11 +188,28 @@ class AuthService: ObservableObject {
     }
 }
 
-// MARK: - ASWebAuthenticationPresentationContextProviding
-extension AuthService: ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first as? UIWindowScene
-        return windowScene?.windows.first ?? ASPresentationAnchor()
+// MARK: - Associated Object Keys
+private enum AssociatedKeys {
+    nonisolated(unsafe) static var webAuthPresenter = "webAuthPresenter"
+}
+
+// MARK: - WebAuth Presenter (NSObject for ASWebAuthenticationPresentationContextProviding)
+class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
+    let window: UIWindow
+    init(window: UIWindow) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
+
+    static func findWindow() -> UIWindow {
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+           let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first {
+            return window
+        }
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+           let window = scene.windows.first {
+            return window
+        }
+        return UIWindow()
     }
 }

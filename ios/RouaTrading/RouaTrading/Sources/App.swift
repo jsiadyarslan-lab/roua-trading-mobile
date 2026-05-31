@@ -7,10 +7,12 @@ struct RouaTradingApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if authService.isAuthenticated {
-                TabBarView()
-            } else {
-                AuthView()
+            Group {
+                if authService.isAuthenticated {
+                    TabBarView()
+                } else {
+                    AuthView()
+                }
             }
             .tint(RouaTheme.Colors.accent)
             .preferredColorScheme(.dark)

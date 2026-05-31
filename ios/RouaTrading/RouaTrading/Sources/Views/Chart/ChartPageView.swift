@@ -305,7 +305,7 @@ struct DrawingToolsSheet: View {
         ("اتجاهات", [("خط أفقي", "minus"), ("خط عمودي", "line.diagonal"), ("خط اتجاه", "arrow.up.right"), ("شعاع", "sun.max")]),
         ("فيبوناتشي", [("ارتداد", "arrow.triangle.2.circlepath"), ("امتداد", "arrow.up.right.circle"), ("مروحة", "fanblades")]),
         ("أشكال", [("مستطيل", "rectangle"), ("مثلث", "triangle"), ("دائرة", "circle"), ("متوازي أضلاع", "parallelogram")]),
-        ("تعليقات", ("نص", "textformat"), ("سهم", "arrow.right"), ("علم", "flag"))],
+        ("تعليقات", [("نص", "textformat"), ("سهم", "arrow.right"), ("علم", "flag")])],
     ]
 
     var body: some View {

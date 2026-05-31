@@ -147,7 +147,7 @@ class AuthService: ObservableObject {
 
             // Step 2: Parse challenge
             guard let json = try? JSONSerialization.jsonObject(with: challengeData) as? [String: Any],
-                  let challenge = json["challenge"] as? String else {
+                  let _ = json["challenge"] as? String else {
                 errorMessage = "فشل الحصول على تحدي المصادقة"
                 isLoading = false
                 return

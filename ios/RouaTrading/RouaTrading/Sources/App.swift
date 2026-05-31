@@ -101,7 +101,15 @@ enum APIConfig {
 // MARK: - ═══════════════════════════════════════
 
 struct AuthUser: Codable { let id: String; let email: String; let displayName: String?; let tier: String }
-struct AuthVerifyResponse: Codable { let success: Bool; let user: AuthUser? }
+struct AuthVerifyResponse: Codable {
+    let authenticated: Bool?
+    let success: Bool?
+    let user: AuthUser?
+    let error: String?
+    let message: String?
+    /// Returns true if either authenticated or success is true and user exists
+    var isValid: Bool { (authenticated == true || success == true) && user != nil }
+}
 struct AuthRegisterRequest: Codable { let email: String; let displayName: String? }
 
 struct Quote: Codable {
@@ -450,7 +458,7 @@ class AuthManager: ObservableObject {
     func validateSession() async {
         do {
             let response: AuthVerifyResponse = try await api.request("/auth/me")
-            if response.success, let user = response.user { self.currentUser = user; self.isAuthenticated = true }
+            if response.isValid, let user = response.user { self.currentUser = user; self.isAuthenticated = true }
             else { self.isAuthenticated = false }
         } catch { self.isAuthenticated = false }
     }
@@ -536,7 +544,7 @@ class AuthManager: ObservableObject {
         Task {
             do {
                 let response: AuthVerifyResponse = try await self.api.request("/auth/me")
-                if response.success, let user = response.user {
+                if response.isValid, let user = response.user {
                     self.currentUser = user; self.isAuthenticated = true; self.isGoogleLoading = false
                 } else {
                     self.errorMessage = "Google login failed - could not verify session"
@@ -619,7 +627,7 @@ class AuthManager: ObservableObject {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Passkey verification failed"])
             }
             let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
-            if meResponse.success, let user = meResponse.user {
+            if meResponse.isValid, let user = meResponse.user {
                 self.currentUser = user; self.isAuthenticated = true; self.isPasskeyLoading = false
             } else {
                 self.errorMessage = "Passkey login failed"; self.isPasskeyLoading = false
@@ -670,7 +678,7 @@ class AuthManager: ObservableObject {
             let otpResp = try? JSONDecoder().decode(OTPVerifyResponse.self, from: data)
             if otpResp?.authenticated == true || otpResp?.success == true {
                 let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
-                if meResponse.success, let user = meResponse.user {
+                if meResponse.isValid, let user = meResponse.user {
                     self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false
                 } else {
                     self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false

@@ -39,37 +39,54 @@ class DashboardViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        // Load all data in parallel
-        async let publicTask: () = loadPublicMarketData()
-        async let authTask: () = loadAuthData()
+        // Launch all tasks in parallel — each one updates the UI independently via @Published
+        // The global isLoading flag is set to false as soon as the critical data (briefs + scanner) arrives
+        // This prevents slow endpoints like /news/latest from blocking the entire UI
+        
         async let briefsTask: () = loadCouncilBriefs()
         async let scannerTask: () = loadScannerSignals()
         async let newsTask: () = loadNews()
+        async let publicTask: () = loadPublicMarketData()
+        async let authTask: () = loadAuthData()
 
-        await publicTask
-        await authTask
+        // Wait for the critical UI data first
         await briefsTask
         await scannerTask
+        
+        // Core data is loaded — stop the global loading spinner so the UI renders
+        isLoading = false
+        
+        // Continue loading remaining data in the background
+        // These update the UI via @Published as they complete
+        await publicTask
+        await authTask
         await newsTask
-
-        self.isLoading = false
     }
 
-    // MARK: - Public Data (always works, no auth needed)
+    // MARK: - Public Data (always works, no auth needed) — PARALLEL loading
     private func loadPublicMarketData() async {
-        var loadedQuotes: [Quote] = []
-        for symbol in popularSymbols.prefix(6) {
-            do {
-                let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
-                let quoteResponse: QuoteResponse = try await api.request("/exchange/quote/\(encoded)")
-                if let quote = quoteResponse.data {
+        await withTaskGroup(of: Quote?.self) { group in
+            for symbol in popularSymbols.prefix(6) {
+                group.addTask {
+                    do {
+                        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+                        let quoteResponse: QuoteResponse = try await self.api.request("/exchange/quote/\(encoded)")
+                        return quoteResponse.data
+                    } catch {
+                        print("[Dashboard] Quote load error for \(symbol): \(error.localizedDescription)")
+                        return nil
+                    }
+                }
+            }
+            
+            var loadedQuotes: [Quote] = []
+            for await quote in group {
+                if let quote = quote {
                     loadedQuotes.append(quote)
                 }
-            } catch {
-                print("[Dashboard] Quote load error for \(symbol): \(error.localizedDescription)")
             }
+            self.topQuotes = loadedQuotes
         }
-        self.topQuotes = loadedQuotes
     }
 
     // MARK: - Auth Data (requires login)
@@ -122,7 +139,7 @@ class DashboardViewModel: ObservableObject {
     // MARK: - Scanner Signals (آخر الإشارات)
     private func loadScannerSignals() async {
         do {
-            // GET /api/scanner/scan → { success, items: [...], meta } (no ?limit= param)
+            // GET /api/scanner/scan → { success, items: [...], meta }
             let response: ScannerScanResponse = try await api.request("/scanner/scan")
             let allItems = response.items ?? []
             self.scannerSignals = Array(allItems.prefix(3))
@@ -133,10 +150,11 @@ class DashboardViewModel: ObservableObject {
         }
     }
 
-    // MARK: - News (آخر الأخبار)
+    // MARK: - News (آخر الأخبار) — with graceful timeout handling
     private func loadNews() async {
         do {
             // GET /api/news/latest?limit=5 → { success: true, data: [...], count: N }
+            // This endpoint can be slow, but it won't block other data loading anymore
             let response: NewsListResponse = try await api.request("/news/latest?limit=5")
             self.newsArticles = response.data ?? []
             print("[Dashboard] ✅ Loaded \(newsArticles.count) news articles")

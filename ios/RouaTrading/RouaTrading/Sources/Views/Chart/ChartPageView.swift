@@ -12,6 +12,7 @@ struct ChartPageView: View {
     @State private var showOrderSheet = false
     @State private var tradePanelExpanded = false
     @State private var orderSide = "BUY"
+    @State private var chartLoadFailed = false
 
     private let timeframes = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"]
     private let popularSymbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "AAPL/USDT", "XAU/USDT"]
@@ -28,8 +29,10 @@ struct ChartPageView: View {
                 // ─── Chart Container (fills remaining space) ───
                 ZStack(alignment: .topTrailing) {
                     // Chart itself
-                    if vm.historicalCandles.isEmpty && vm.isLoading {
+                    if vm.isLoading && vm.historicalCandles.isEmpty {
                         loadingView
+                    } else if vm.historicalCandles.isEmpty {
+                        chartErrorView
                     } else {
                         CandlestickChartWrapper(
                             candles: vm.historicalCandles,
@@ -48,18 +51,14 @@ struct ChartPageView: View {
         .navigationBarHidden(true)
         .task {
             vm.selectedTimeframe = selectedTimeframe.lowercased()
-            await vm.loadTradingData()
-            wsManager.connect(symbol: vm.symbol, interval: selectedTimeframe)
+            await loadChartData()
         }
         .onDisappear { wsManager.disconnect() }
         .sheet(isPresented: $showOrderSheet) { OrderSheet(vm: vm) }
         .sheet(isPresented: $showSymbolPicker) {
             SymbolPickerView(selectedSymbol: $vm.symbol, symbols: popularSymbols) { symbol in
                 vm.symbol = symbol
-                Task {
-                    await vm.loadTradingData()
-                    wsManager.connect(symbol: symbol, interval: selectedTimeframe)
-                }
+                Task { await loadChartData() }
             }
         }
         .sheet(isPresented: $showDrawingPanel) {
@@ -71,6 +70,19 @@ struct ChartPageView: View {
         .sheet(isPresented: $showAIPanel) {
             AISmartSheet(symbol: vm.symbol)
         }
+    }
+
+    // MARK: - Load Chart Data
+    private func loadChartData() async {
+        chartLoadFailed = false
+        await vm.loadTradingData()
+        
+        if vm.historicalCandles.isEmpty && !vm.isLoading {
+            chartLoadFailed = true
+        }
+        
+        // Connect WebSocket for live updates
+        wsManager.connect(symbol: vm.symbol, interval: selectedTimeframe)
     }
 
     // MARK: - Navigation Bar
@@ -136,8 +148,7 @@ struct ChartPageView: View {
                         Button {
                             selectedTimeframe = tf
                             vm.selectedTimeframe = tf.lowercased()
-                            wsManager.connect(symbol: vm.symbol, interval: tf)
-                            Task { await vm.loadHistoricalCandles() }
+                            Task { await loadChartData() }
                         } label: {
                             Text(tf)
                                 .font(.system(size: 12, weight: selectedTimeframe == tf ? .bold : .medium))
@@ -244,6 +255,37 @@ struct ChartPageView: View {
             }
         }
     }
+
+    // MARK: - Chart Error View
+    private var chartErrorView: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md)
+                .fill(RouaTheme.Colors.surface)
+            VStack(spacing: RouaTheme.Spacing.md) {
+                Image(systemName: "chart.line.flattrend.xyaxis")
+                    .font(.system(size: 40))
+                    .foregroundStyle(RouaTheme.Colors.textTertiary)
+                Text("فشل تحميل بيانات الشارت")
+                    .font(.system(size: 14))
+                    .foregroundStyle(RouaTheme.Colors.textSecondary)
+                Button {
+                    Task { await loadChartData() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                        Text("إعادة المحاولة")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(RouaTheme.Colors.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(RouaTheme.Colors.accent.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Drawing Tools Sheet
@@ -315,7 +357,7 @@ struct IndicatorSheet: View {
         ("STOCH", "الستوكاستك", "#29B6F6"),
         ("ATR", "متوسط المدى الحقيقي", "#FF9800"),
         ("VWAP", "فواب", "#E040FB"),
-        ("VOL", "ال حجم", "#3B82F6"),
+        ("VOL", "الحجم", "#3B82F6"),
     ]
 
     var body: some View {

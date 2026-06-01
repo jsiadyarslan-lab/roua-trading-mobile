@@ -38,9 +38,9 @@ class PortfolioViewModel: ObservableObject {
             print("[Portfolio] Account data unavailable: \(error.localizedDescription)")
         }
 
-        // Try loading balances
+        // Try loading balances (correct endpoint: /portfolio/credentials/balances)
         do {
-            let response: BalancesResponse = try await api.request("/portfolio/balances")
+            let response: BalancesResponse = try await api.request("/portfolio/credentials/balances")
             self.balances = response.exchanges ?? []
             if let totalEquity = response.totalEquityUsd {
                 self.totalValue = totalEquity

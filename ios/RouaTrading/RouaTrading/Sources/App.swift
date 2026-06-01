@@ -10,6 +10,7 @@ import AuthenticationServices
 @main
 struct RouaTradingApp: App {
     @StateObject private var authManager = AuthManager.shared
+    @AppStorage("appLanguage") private var appLanguage = "ar"
     
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,8 @@ struct RouaTradingApp: App {
             }
             .tint(RouaTheme.Colors.accent)
             .preferredColorScheme(.dark)
+            .environment(\.layoutDirection, appLanguage == "ar" ? .rightToLeft : .leftToRight)
+            .environment(\.locale, Locale(identifier: appLanguage))
             .onAppear { authManager.checkExistingSession() }
 
         }

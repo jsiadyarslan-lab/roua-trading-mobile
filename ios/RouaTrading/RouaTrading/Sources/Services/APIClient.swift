@@ -106,30 +106,33 @@ class APIClient {
 
     // MARK: - Smart Decode (handles multiple API response formats)
     private func smartDecode<T: Codable>(_ type: T.Type, from data: Data, path: String) throws -> T {
-        // Strategy 1: Direct decode (works for raw arrays/objects like /trading/positions)
+        // Strategy 1: Direct decode (works for raw arrays/objects)
         if let result = try? decoder.decode(T.self, from: data) {
             print("[API] ✅ Decoded directly as \(T.self) from \(path)")
             return result
         }
 
-        // Strategy 2: Unwrap { success, data: ... } wrapper
-        if let wrapper = try? decoder.decode(ApiResponseWrapper.self, from: data) {
-            if let innerData = wrapper.data {
-                if let encoded = try? JSONEncoder().encode(innerData),
+        // Strategy 2: Unwrap { success, data: ... } wrapper using JSONSerialization (more reliable)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Try .data field
+            if let innerData = json["data"] {
+                if let encoded = try? JSONSerialization.data(withJSONObject: innerData),
                    let result = try? decoder.decode(T.self, from: encoded) {
                     print("[API] ✅ Decoded via .data wrapper as \(T.self) from \(path)")
                     return result
                 }
             }
-            if let innerItems = wrapper.items {
-                if let encoded = try? JSONEncoder().encode(innerItems),
+            // Try .items field
+            if let innerItems = json["items"] {
+                if let encoded = try? JSONSerialization.data(withJSONObject: innerItems),
                    let result = try? decoder.decode(T.self, from: encoded) {
                     print("[API] ✅ Decoded via .items wrapper as \(T.self) from \(path)")
                     return result
                 }
             }
-            if let innerTrades = wrapper.trades {
-                if let encoded = try? JSONEncoder().encode(innerTrades),
+            // Try .trades field
+            if let innerTrades = json["trades"] {
+                if let encoded = try? JSONSerialization.data(withJSONObject: innerTrades),
                    let result = try? decoder.decode(T.self, from: encoded) {
                     print("[API] ✅ Decoded via .trades wrapper as \(T.self) from \(path)")
                     return result
@@ -143,8 +146,8 @@ class APIClient {
             return authResp
         }
 
-        // All strategies failed
-        let raw = String(data: data, encoding: .utf8)?.prefix(500) ?? "nil"
+        // All strategies failed — log details for debugging
+        let raw = String(data: data, encoding: .utf8)?.prefix(800) ?? "nil"
         print("[API] ❌ ALL decode strategies failed for \(path)")
         print("[API] Expected type: \(T.self)")
         print("[API] Response body: \(raw)")

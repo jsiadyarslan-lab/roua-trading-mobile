@@ -21,11 +21,11 @@ class DashboardViewModel: ObservableObject {
     var portfolioSummary: PortfolioSummary? {
         guard let acc = accountOverview else { return nil }
         return PortfolioSummary(
-            totalValue: acc.totalValue ?? 0,
-            totalPnl: (acc.totalRealizedPnl ?? 0) + (acc.totalUnrealizedPnl ?? 0),
-            dailyPnl: acc.totalUnrealizedPnl ?? 0,
+            totalValue: acc.effectiveTotalValue,
+            totalPnl: (acc.totalRealizedPnl ?? 0) + acc.effectiveUnrealizedPnl,
+            dailyPnl: acc.dailyPnL ?? acc.effectiveUnrealizedPnl,
             positions: acc.positions,
-            unrealizedPnl: acc.totalUnrealizedPnl,
+            unrealizedPnl: acc.effectiveUnrealizedPnl,
             realizedPnl: acc.totalRealizedPnl
         )
     }
@@ -73,11 +73,13 @@ class DashboardViewModel: ObservableObject {
             return
         }
 
+        // Use v2/portfolio endpoint (v1 /trading/account is broken — 503)
         do {
-            let account: AccountOverview = try await api.request("/trading/account")
+            let account: AccountOverview = try await api.request("/trading/v2/portfolio")
             self.accountOverview = account
-            self.positions = account.positions ?? []
+            self.positions = account.effectivePositions
             self.isAuthDataAvailable = true
+            print("[Dashboard] ✅ Portfolio loaded: value=\(account.effectiveTotalValue), positions=\(account.effectivePositions.count)")
         } catch {
             if let apiError = error as? APIError, case .unauthorized = apiError {
                 self.errorMessage = "يرجى تسجيل الدخول لعرض بيانات حسابك"
@@ -92,6 +94,7 @@ class DashboardViewModel: ObservableObject {
         do {
             let historyResponse: TradeHistoryResponse = try await api.request("/trading/history")
             self.trades = historyResponse.trades ?? []
+            print("[Dashboard] ✅ Loaded \(self.trades.count) trade history items")
         } catch {
             print("[Dashboard] Trade history unavailable: \(error.localizedDescription)")
         }

@@ -87,7 +87,7 @@ struct TradingView: View {
                                     Text(pos.side == "BUY" ? "شراء" : "بيع").font(.system(size: 10)).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
                                 }
                                 Spacer()
-                                if let pnl = pos.unrealizedPnl {
+                                if let pnl = pos.unrealizedPnlValue {
                                     Text(String(format: "%+.2f", pnl)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
                                 }
                             }

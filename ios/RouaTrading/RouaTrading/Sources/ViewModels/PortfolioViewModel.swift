@@ -30,10 +30,11 @@ class PortfolioViewModel: ObservableObject {
             print("[Portfolio] Error: \(error)")
         }
 
-        // Load account overview for total portfolio value
+        // Load account overview for total portfolio value (use v2 endpoint)
         do {
-            let account: AccountOverview = try await api.request("/trading/account")
-            self.totalValue = account.totalValue ?? 0
+            let account: AccountOverview = try await api.request("/trading/v2/portfolio")
+            self.totalValue = account.effectiveTotalValue
+            print("[Portfolio] ✅ Portfolio value loaded: $\(account.effectiveTotalValue)")
         } catch {
             print("[Portfolio] Account data unavailable: \(error.localizedDescription)")
         }
@@ -45,6 +46,7 @@ class PortfolioViewModel: ObservableObject {
             if let totalEquity = response.totalEquityUsd {
                 self.totalValue = totalEquity
             }
+            print("[Portfolio] ✅ Loaded \(self.balances.count) exchange balances, total equity: $\(response.totalEquityUsd ?? 0)")
         } catch {
             print("[Portfolio] Balances unavailable: \(error.localizedDescription)")
         }

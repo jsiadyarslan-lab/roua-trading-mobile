@@ -200,7 +200,7 @@ struct TradeHistoryResponse: Codable {
     let trades: [Trade]?
 }
 
-// GET /api/trading/account → raw object
+// GET /api/trading/v2/portfolio → { success: true, data: V2PortfolioData }
 struct AccountOverview: Codable {
     let totalPositions: Int?
     let totalValue: Double?
@@ -208,6 +208,20 @@ struct AccountOverview: Codable {
     let totalRealizedPnl: Double?
     let usedMargin: Double?
     let positions: [Position]?
+    // v2/portfolio fields
+    let totalBalance: Double?
+    let dailyPnL: Double?
+    let dailyPnLPercent: Double?
+    let totalExposure: Double?
+    let openPositionsCount: Int?
+    let maxDrawdownPercent: Double?
+    let unrealizedPnL: Double?
+
+    // Computed: unify v1 and v2 field names
+    var effectiveTotalValue: Double { totalBalance ?? totalValue ?? 0 }
+    var effectiveUnrealizedPnl: Double { unrealizedPnL ?? totalUnrealizedPnl ?? 0 }
+    var effectiveUsedMargin: Double { usedMargin ?? 0 }
+    var effectivePositions: [Position] { positions ?? [] }
 }
 
 // PortfolioSummary for UI (derived from AccountOverview)
@@ -239,6 +253,7 @@ struct V2PlaceOrderResponse: Codable {
     let data: V2OrderData?
     let orderId: String?        // some endpoints return flat
     let status: String?
+    let message: String?       // backend sometimes returns message
 }
 
 struct V2OrderData: Codable {
@@ -320,10 +335,14 @@ struct AIAnalyzeRequest: Codable {
 struct AIAnalyzeResponse: Codable {
     let analysis: String?
     let result: String?        // some endpoints use "result" instead
+    let content: String?       // v2 AI response uses "content" field
     let model: String?
     let provider: String?
+    let confidence: Double?
+    let processingTimeMs: Int?
+    let language: String?
 
-    var text: String { analysis ?? result ?? "لا توجد استجابة" }
+    var text: String { content ?? analysis ?? result ?? "لا توجد استجابة" }
 }
 
 // MARK: - Portfolio Models
@@ -559,6 +578,17 @@ struct ExchangeBalance: Codable, Identifiable {
     let available: Double?
     let currency: String?
     let usedMargin: Double?
+    let paperBalance: Double?
+    let assets: [BalanceAsset]?
+    let error: String?
+    let errorDetail: String?
+}
+
+struct BalanceAsset: Codable {
+    let currency: String?
+    let free: Double?
+    let used: Double?
+    let total: Double?
 }
 
 struct SanctuaryInfo: Codable {

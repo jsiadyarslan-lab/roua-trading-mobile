@@ -27,11 +27,11 @@ class TradingViewModel: ObservableObject {
     var portfolioSummary: PortfolioSummary? {
         guard let acc = accountOverview else { return nil }
         return PortfolioSummary(
-            totalValue: acc.totalValue ?? 0,
-            totalPnl: (acc.totalRealizedPnl ?? 0) + (acc.totalUnrealizedPnl ?? 0),
-            dailyPnl: acc.totalUnrealizedPnl ?? 0,
+            totalValue: acc.effectiveTotalValue,
+            totalPnl: (acc.totalRealizedPnl ?? 0) + acc.effectiveUnrealizedPnl,
+            dailyPnl: acc.dailyPnL ?? acc.effectiveUnrealizedPnl,
             positions: acc.positions,
-            unrealizedPnl: acc.totalUnrealizedPnl,
+            unrealizedPnl: acc.effectiveUnrealizedPnl,
             realizedPnl: acc.totalRealizedPnl
         )
     }
@@ -83,14 +83,21 @@ class TradingViewModel: ObservableObject {
             return
         }
 
+        // Use v2 endpoints (v1 /trading/positions is broken — 503 due to briefId)
         do {
-            let positions: [Position] = try await api.request("/trading/positions")
+            let positions: [Position] = try await api.request("/trading/v2/positions")
             self.positions = positions
-
-            let account: AccountOverview = try await api.request("/trading/account")
-            self.accountOverview = account
+            print("[Trading] ✅ Loaded \(positions.count) positions")
         } catch {
-            print("[Trading] Account data unavailable (auth required): \(error.localizedDescription)")
+            print("[Trading] Positions unavailable: \(error.localizedDescription)")
+        }
+
+        do {
+            let account: AccountOverview = try await api.request("/trading/v2/portfolio")
+            self.accountOverview = account
+            print("[Trading] ✅ Portfolio loaded")
+        } catch {
+            print("[Trading] Account data unavailable: \(error.localizedDescription)")
         }
     }
 
@@ -128,7 +135,7 @@ class TradingViewModel: ObservableObject {
         )
 
         do {
-            let response: V2PlaceOrderResponse = try await api.request("/trading/orders", method: "POST", body: request)
+            let response: V2PlaceOrderResponse = try await api.request("/trading/v2/orders", method: "POST", body: request)
             self.orderSuccess = response
             self.isPlacingOrder = false
             self.quantity = ""

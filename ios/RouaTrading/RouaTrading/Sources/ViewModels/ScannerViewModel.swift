@@ -5,6 +5,7 @@ import Foundation
 class ScannerViewModel: ObservableObject {
     @Published var results: [ScanResult] = []
     @Published var heatmapData: [HeatmapItem] = []
+    @Published var overview: ScannerOverview?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var showError = false
@@ -15,21 +16,39 @@ class ScannerViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
+        // Load scan results (public endpoint)
         do {
-            // Scanner scan returns { items: [...], meta: {...} }
             let scanResponse: ScannerScanResponse = try await api.request("/scanner/scan")
             self.results = scanResponse.items ?? []
+            print("[Scanner] Loaded \(results.count) scan results")
+        } catch {
+            print("[Scanner] Scan error: \(error.localizedDescription)")
+        }
 
-            // Heatmap returns raw array from NestJS (or { success, data: [...] } from web proxy)
+        // Load heatmap data (public endpoint — returns { success, data: [...] })
+        do {
             let heatmapItems: [HeatmapItem] = try await api.request("/scanner/heatmap")
             self.heatmapData = heatmapItems
-
-            self.isLoading = false
+            print("[Scanner] Loaded \(heatmapData.count) heatmap items")
         } catch {
-            self.isLoading = false
-            self.errorMessage = "فشل مسح السوق: \(error.localizedDescription)"
+            print("[Scanner] Heatmap error: \(error.localizedDescription)")
+        }
+
+        // Load market overview (public endpoint)
+        do {
+            let scannerOverview: ScannerOverview = try await api.request("/scanner/overview")
+            self.overview = scannerOverview
+            print("[Scanner] Loaded market overview")
+        } catch {
+            print("[Scanner] Overview error: \(error.localizedDescription)")
+        }
+
+        self.isLoading = false
+
+        // Show error only if ALL data failed to load
+        if results.isEmpty && heatmapData.isEmpty {
+            self.errorMessage = "فشل تحميل بيانات السوق. اسحب للأسفل للمحاولة مرة أخرى."
             self.showError = true
-            print("[Scanner] Error: \(error)")
         }
     }
 

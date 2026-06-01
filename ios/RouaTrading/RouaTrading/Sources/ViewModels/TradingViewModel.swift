@@ -44,11 +44,10 @@ class TradingViewModel: ObservableObject {
         async let quoteTask: () = loadQuote()
         async let candlesTask: () = loadHistoricalCandles()
 
-        // Then try authenticated endpoints (may fail if not logged in)
         await quoteTask
         await candlesTask
 
-        // Try authenticated data — don't fail the whole screen if these error
+        // Then try authenticated endpoints
         await loadAccountData()
 
         self.isLoading = false
@@ -59,41 +58,50 @@ class TradingViewModel: ObservableObject {
         symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
     }
 
+    // Convert UI timeframe to API interval
+    // UI: "1m", "5m", "15m", "1h", "4h", "1D", "1W"
+    // Backend CCXT: "1m", "5m", "15m", "1h", "4h", "1d", "1w", "1day"
+    private var apiInterval: String {
+        let tf = selectedTimeframe.lowercased()
+        // CCXT uses "1d" not "1D", "1w" not "1W"
+        return tf
+    }
+
     func loadQuote() async {
         do {
             let quoteResponse: QuoteResponse = try await api.request("/exchange/quote/\(encodedSymbol)")
             self.currentQuote = quoteResponse.data
+            print("[Trading] Quote loaded: \(symbol) = \(currentQuote?.lastPrice ?? 0)")
         } catch {
-            print("[Trading] Quote load error: \(error)")
+            print("[Trading] Quote load error: \(error.localizedDescription)")
         }
     }
 
     func loadAccountData() async {
+        guard APIClient.shared.sessionToken != nil else {
+            print("[Trading] No session token — skipping account data")
+            return
+        }
+
         do {
-            // Load positions (requires auth — may return empty or 401)
             let positions: [Position] = try await api.request("/trading/positions")
             self.positions = positions
 
-            // Load account overview
             let account: AccountOverview = try await api.request("/trading/account")
             self.accountOverview = account
         } catch {
-            // Auth required — not an error if user not logged in
             print("[Trading] Account data unavailable (auth required): \(error.localizedDescription)")
         }
     }
 
     func loadHistoricalCandles() async {
         do {
-            // Normalize timeframe for API: "1D" -> "1d", "1W" -> "1w"
-            let apiInterval = selectedTimeframe.lowercased()
             let response: CandleHistoryResponse = try await api.request("/exchange/history/\(encodedSymbol)?interval=\(apiInterval)&limit=500")
             let candles = response.data ?? []
             print("[Trading] Loaded \(candles.count) historical candles for \(symbol) @ \(apiInterval)")
             self.historicalCandles = candles
         } catch {
             print("[Trading] Failed to load historical candles: \(error.localizedDescription)")
-            // Don't fail the whole screen — chart will be empty
         }
     }
 

@@ -13,6 +13,21 @@ struct ScannerView: View {
 
                 Text("ماسح السوق").font(.system(size: 22, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
 
+                // Market Overview Stats
+                if let overview = vm.overview {
+                    GlassCard {
+                        VStack(spacing: RouaTheme.Spacing.md) {
+                            Text("نظرة عامة على السوق").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: RouaTheme.Spacing.md) {
+                                StatMini(title: "شراء", value: "\(overview.bullishCount ?? 0)", isPositive: true)
+                                StatMini(title: "بيع", value: "\(overview.bearishCount ?? 0)", isPositive: false)
+                                StatMini(title: "محايد", value: "\(overview.neutralCount ?? 0)")
+                            }
+                        }
+                    }
+                }
+
+                // Scan Results
                 if vm.isLoading && vm.results.isEmpty {
                     ForEach(0..<5, id: \.self) { _ in
                         GlassCard { ShimmerView() }
@@ -33,11 +48,11 @@ struct ScannerView: View {
                                         HStack(spacing: 6) {
                                             Text(r.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
                                             if let dir = r.direction {
-                                                Text(dir == "BUY" ? "شراء" : dir == "SELL" ? "بيع" : "محايد")
+                                                Text(dir == "BUY" || dir == "STRONG_BUY" ? "شراء" : dir == "SELL" || dir == "STRONG_SELL" ? "بيع" : "محايد")
                                                     .font(.system(size: 10, weight: .bold))
-                                                    .foregroundStyle(dir == "BUY" ? RouaTheme.Colors.profit : dir == "SELL" ? RouaTheme.Colors.loss : RouaTheme.Colors.textTertiary)
+                                                    .foregroundStyle(dir.contains("BUY") ? RouaTheme.Colors.profit : dir.contains("SELL") ? RouaTheme.Colors.loss : RouaTheme.Colors.textTertiary)
                                                     .padding(.horizontal, 6).padding(.vertical, 2)
-                                                    .background(dir == "BUY" ? RouaTheme.Colors.profitBackground : dir == "SELL" ? RouaTheme.Colors.lossBackground : RouaTheme.Colors.surfaceElevated)
+                                                    .background(dir.contains("BUY") ? RouaTheme.Colors.profitBackground : dir.contains("SELL") ? RouaTheme.Colors.lossBackground : RouaTheme.Colors.surfaceElevated)
                                                     .clipShape(Capsule())
                                             }
                                         }

@@ -32,11 +32,35 @@ struct SettingsView: View {
                             Image(systemName: "person.fill").font(.system(size: 24)).foregroundStyle(.white)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(authService.currentUser?.displayName ?? "المتداول").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                            Text(authService.currentUser?.email ?? "").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textSecondary)
+                            Text(authService.currentUser?.displayName ?? "زائر").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                            Text(authService.currentUser?.email ?? "لم يتم تسجيل الدخول").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textSecondary)
                             if let tier = authService.currentUser?.tier {
                                 Text(tier).font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent).padding(.horizontal, 6).padding(.vertical, 2).background(RouaTheme.Colors.accent.opacity(0.1)).clipShape(Capsule())
                             }
+                        }
+                    }
+                }
+
+                // Auth Status Card
+                GlassCard {
+                    VStack(spacing: RouaTheme.Spacing.md) {
+                        HStack {
+                            Circle()
+                                .fill(authService.isAuthenticated ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                                .frame(width: 10, height: 10)
+                            Text(authService.isAuthenticated ? "متصل بالحساب" : "غير متصل — تسجيل الدخول مطلوب")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(authService.isAuthenticated ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                            Spacer()
+                        }
+                        if let token = APIClient.shared.sessionToken {
+                            Text("Token: \(token.prefix(12))...")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(RouaTheme.Colors.textTertiary)
+                        } else {
+                            Text("لا يوجد رمز جلسة")
+                                .font(.system(size: 12))
+                                .foregroundStyle(RouaTheme.Colors.textTertiary)
                         }
                     }
                 }
@@ -81,15 +105,22 @@ struct SettingsView: View {
                 GlassCard {
                     VStack(spacing: RouaTheme.Spacing.sm) {
                         HStack { Text("الإصدار").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("3.0.0").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
-                        HStack { Text("البناء").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("Phase 2").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                        HStack { Text("البناء").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("Phase 3").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                        HStack { Text("API").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text(APIConfig.baseURL).font(.system(size: 10, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(1) }
                     }
                 }
 
-                TradingButton(title: "تسجيل الخروج", style: .danger, isLoading: false) { showLogout = true }
-                    .alert("تسجيل الخروج", isPresented: $showLogout) {
-                        Button("تسجيل الخروج", role: .destructive) { Task { await authService.logout() } }
-                        Button("إلغاء", role: .cancel) {}
-                    } message: { Text("هل أنت متأكد من تسجيل الخروج؟") }
+                if authService.isAuthenticated {
+                    TradingButton(title: "تسجيل الخروج", style: .danger, isLoading: false) { showLogout = true }
+                        .alert("تسجيل الخروج", isPresented: $showLogout) {
+                            Button("تسجيل الخروج", role: .destructive) { Task { await authService.logout() } }
+                            Button("إلغاء", role: .cancel) {}
+                        } message: { Text("هل أنت متأكد من تسجيل الخروج؟") }
+                } else {
+                    TradingButton(title: "تسجيل الدخول", style: .primary, isLoading: authService.isLoading) {
+                        Task { await authService.signInWithGoogle() }
+                    }
+                }
             }
             .padding(RouaTheme.Spacing.lg)
         }

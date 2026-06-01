@@ -14,9 +14,10 @@ struct AuthVerifyResponse: Codable {
     let success: Bool?       // fallback for other endpoints
     let user: AuthUser?
     let error: String?       // for error cases like EMAIL_NOT_VERIFIED
+    let message: String?     // optional message from backend
 
     var isValid: Bool {
-        authenticated == true || success == true
+        (authenticated == true || success == true) && user != nil
     }
 }
 
@@ -53,6 +54,7 @@ struct Quote: Codable {
     let cached: Bool?
 
     // Computed helpers
+    var last: Double? { price ?? close }
     var lastPrice: Double { price ?? close ?? 0 }
 }
 
@@ -151,6 +153,7 @@ struct Position: Codable, Identifiable {
     let entryPrice: Double
     let currentPrice: Double?
     let unrealizedPnl: Double?
+    let unrealizedPnL: Double?  // backend uses PnL (capital L)
     let stopLoss: Double?
     let takeProfit: Double?
     let highestPrice: Double?
@@ -159,6 +162,9 @@ struct Position: Codable, Identifiable {
     let openedAt: String?
     let credentialId: String?
     let version: Int?
+
+    // Computed alias for view compatibility
+    var unrealizedPnlValue: Double? { unrealizedPnl ?? unrealizedPnL }
 }
 
 // GET /api/trading/history → { success: true, trades: [...] }
@@ -174,6 +180,19 @@ struct Trade: Codable, Identifiable {
     let realizedPct: Double?
     let closeTime: Int64?       // epoch milliseconds
     let status: String?
+
+    // Computed for view compatibility
+    var quantity: Double { qty ?? 0 }
+    var price: Double { exitPrice ?? entryPrice ?? 0 }
+    var pnl: Double? { realizedPnl }
+    var createdAt: String {
+        if let ct = closeTime {
+            let date = Date(timeIntervalSince1970: Double(ct) / 1000)
+            let formatter = ISO8601DateFormatter()
+            return formatter.string(from: date)
+        }
+        return ""
+    }
 }
 
 struct TradeHistoryResponse: Codable {
@@ -258,6 +277,7 @@ struct ScanResult: Codable, Identifiable {
     let volume: Double?
     let direction: String?     // "BUY" / "SELL" / "NEUTRAL"
     let signalClass: String?
+    let signal: String?        // alias for signalClass (some endpoints use this)
     let technicalScore: Int?
     let confidence: Int?
     let rsi: Double?
@@ -277,6 +297,9 @@ struct HeatmapItem: Codable, Identifiable {
     let volume: Double?
     let direction: String?
     let technicalScore: Int?
+
+    // Computed for view compatibility
+    var change: Double? { changePercent }
 }
 
 // MARK: - AI Models
@@ -311,7 +334,13 @@ struct ExchangeCredential: Codable, Identifiable {
     let exchange: String
     let label: String
     let testnet: Bool
-    let createdAt: String
+    let isValid: Bool?
+    let permissions: String?
+    let lastValidatedAt: String?
+    let createdAt: String?
+
+    // Computed for view compatibility
+    var isTestnet: Bool { testnet || exchange.lowercased().contains("testnet") || exchange.lowercased().contains("paper") }
 }
 
 struct CredentialsResponse: Codable {
@@ -394,4 +423,172 @@ enum APIError: LocalizedError {
         case .unknown(let error): return error.localizedDescription
         }
     }
+}
+
+// MARK: - Extended Models (for advanced features)
+
+struct Signal: Codable, Identifiable {
+    let id: String; let pair: String; let direction: String?
+    let entryPrice: Double?; let stopLoss: Double?; let takeProfit: Double?
+    let confidence: Double?; let status: String?; let createdAt: String?
+}
+
+struct ExecutorStatus: Codable {
+    let active: Bool?; let status: String?; let mode: String?
+    let startedAt: String?; let tradesExecuted: Int?; let pnl: Double?
+}
+
+struct ExecutorExposure: Codable {
+    let totalExposure: Double?; let maxExposure: Double?
+    let positions: Int?; let currency: String?
+}
+
+struct TradingBrief: Codable, Identifiable {
+    let id: String; let symbol: String; let title: String?
+    let summary: String?; let action: String?; let confidence: Double?
+    let createdAt: String?
+}
+
+struct AgentStatus: Codable {
+    let running: Bool?; let strategy: String?; let startedAt: String?
+    let tradesCount: Int?; let pnl: Double?; let status: String?
+}
+
+struct AgentSettings: Codable {
+    let maxPositionSize: Double?; let riskLevel: String?
+    let autoExecute: Bool?; let allowedPairs: [String]?
+}
+
+struct AgentPerformance: Codable {
+    let totalTrades: Int?; let winRate: Double?; let totalPnl: Double?
+    let sharpeRatio: Double?; let maxDrawdown: Double?
+}
+
+struct NewsArticle: Codable, Identifiable {
+    let id: String; let title: String; let summary: String?
+    let source: String?; let url: String?; let sentiment: String?
+    let publishedAt: String?
+}
+
+struct MarketSentiment: Codable {
+    let overall: String?; let score: Double?; let fearGreedIndex: Int?
+}
+
+struct ScannerOverview: Codable {
+    let totalScanned: Int?
+    let bullishCount: Int?
+    let bearishCount: Int?
+    let neutralCount: Int?
+    let topGainers: [HeatmapItem]?
+    let topLosers: [HeatmapItem]?
+    let strongestSignals: [ScanResult]?
+    let marketSentiment: String?
+    let sentimentScore: Int?
+    /// Computed for view compatibility
+    var bullish: Int? { bullishCount }
+    var bearish: Int? { bearishCount }
+    var neutral: Int? { neutralCount }
+    var topGainer: String? { topGainers?.first?.symbol }
+    var topLoser: String? { topLosers?.first?.symbol }
+}
+
+struct SymbolAnalysis: Codable {
+    let symbol: String; let price: Double?; let change: Double?
+    let recommendation: String?; let confidence: Double?
+    let support: Double?; let resistance: Double?
+}
+
+struct AIModel: Codable, Identifiable {
+    var id: String { name }
+    let name: String
+    let provider: String?
+    let available: Bool?
+    let model: String?
+    var active: Bool? { available }
+}
+
+struct AIProviderInfo: Codable {
+    let available: Bool?
+    let model: String?
+}
+
+struct AIConsensusRequest: Codable { let prompt: String; let models: [String]? }
+struct AIConsensusResponse: Codable { let consensus: String?; let analyses: [String: String]? }
+
+struct NeuralPredictRequest: Codable { let symbol: String; let horizon: String? }
+struct NeuralPredictResponse: Codable { let prediction: Double?; let confidence: Double?; let direction: String?; let model: String? }
+
+struct NeuralBacktestRequest: Codable { let symbol: String; let strategy: String; let startDate: String; let endDate: String }
+struct NeuralBacktestResponse: Codable { let totalReturn: Double?; let sharpeRatio: Double?; let maxDrawdown: Double?; let trades: Int? }
+
+struct NewsAnalyzeRequest: Codable { let url: String?; let text: String? }
+struct NewsAnalyzeResponse: Codable { let sentiment: String?; let score: Double?; let summary: String? }
+
+struct NotificationPreferences: Codable {
+    let pushEnabled: Bool?; let emailEnabled: Bool?
+    let tradeAlerts: Bool?; let signalAlerts: Bool?; let newsAlerts: Bool?
+}
+
+struct UnreadCount: Codable { let count: Int? }
+
+struct CredentialBalance: Codable, Identifiable {
+    var id: String { credentialId }
+    let credentialId: String
+    let exchange: String?
+    let totalBalance: Double?
+    let availableBalance: Double?
+    let currency: String?
+}
+
+struct BalancesResponse: Codable {
+    let totalEquityUsd: Double?
+    let totalAvailableUsd: Double?
+    let totalUsedMargin: Double?
+    let exchanges: [ExchangeBalance]?
+    let allRealExchangesFailed: Bool?
+    let hasRealCredentials: Bool?
+}
+
+struct ExchangeBalance: Codable, Identifiable {
+    var id: String { credentialId ?? UUID().uuidString }
+    let exchange: String?
+    let label: String?
+    let credentialId: String?
+    let isTestnet: Bool?
+    let equity: Double?
+    let available: Double?
+    let currency: String?
+    let usedMargin: Double?
+}
+
+struct SanctuaryInfo: Codable {
+    let enabled: Bool?; let riskScore: Double?; let protectedAmount: Double?
+    let stopLossEnabled: Bool?; let maxDrawdown: Double?
+}
+
+struct V2Order: Codable, Identifiable {
+    let id: String
+    let symbol: String
+    let side: String
+    let type: String
+    let quantity: Double
+    let price: Double?
+    let status: String?
+    let createdAt: String?
+    let stopLoss: Double?
+    let takeProfit: Double?
+    let filledQuantity: Double?
+    let averagePrice: Double?
+    let fee: Double?
+    let feeCurrency: String?
+    let exchangeOrderId: String?
+}
+
+struct AccountInfo: Codable {
+    let balance: Double?; let equity: Double?; let availableMargin: Double?
+    let unrealizedPnl: Double?; let currency: String?
+}
+
+struct ExchangeAdapter: Codable, Identifiable {
+    var id: String { name }; let name: String; let enabled: Bool?
 }

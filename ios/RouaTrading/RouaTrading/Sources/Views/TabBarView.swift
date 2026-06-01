@@ -1,17 +1,14 @@
 import SwiftUI
 
-// MARK: - Tab Bar View — 6 tabs
+// MARK: - Tab Bar View — 3 tabs: الرئيسية، الشارت، تداول
 struct TabBarView: View {
-    @State private var selectedTab = 1 // Default to Chart tab
+    @State private var selectedTab = 0
     @AppStorage("appLanguage") private var appLanguage = "ar"
 
     private let tabs: [(String, String)] = [
-        ("الرئيسية", "square.grid.2x2"),      // 0 - Home
+        ("الرئيسية", "house.fill"),         // 0 - Home
         ("الشارت", "chart.line.uptrend.xyaxis"), // 1 - Chart
-        ("الذكاء", "brain"),                  // 2 - AI
-        ("الماسح", "magnifyingglass"),         // 3 - Scanner
-        ("الوكيل", "robot"),                  // 4 - Agent
-        ("الإعدادات", "gearshape"),            // 5 - Settings
+        ("تداول", "arrow.left.arrow.right"),     // 2 - Trading
     ]
 
     var body: some View {
@@ -20,10 +17,7 @@ struct TabBarView: View {
                 switch selectedTab {
                 case 0: NavigationStack { DashboardView() }
                 case 1: NavigationStack { ChartPageView() }
-                case 2: NavigationStack { AIHubView() }
-                case 3: NavigationStack { ScannerView() }
-                case 4: NavigationStack { AgentView() }
-                case 5: NavigationStack { SettingsView() }
+                case 2: NavigationStack { PositionsView() }
                 default: EmptyView()
                 }
             }.padding(.bottom, 72)
@@ -32,7 +26,7 @@ struct TabBarView: View {
             VStack(spacing: 0) {
                 Divider().background(RouaTheme.Colors.border)
                 HStack(spacing: 0) {
-                    ForEach(0..<6, id: \.self) { i in
+                    ForEach(0..<3, id: \.self) { i in
                         tabItem(i)
                     }
                 }
@@ -52,10 +46,10 @@ struct TabBarView: View {
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: tabs[index].1)
-                    .font(.system(size: 18))
+                    .font(.system(size: 20))
                     .foregroundStyle(selectedTab == index ? RouaTheme.Colors.accent : RouaTheme.Colors.textTertiary)
                 Text(tabs[index].0)
-                    .font(.system(size: 9, weight: selectedTab == index ? .bold : .medium))
+                    .font(.system(size: 10, weight: selectedTab == index ? .bold : .medium))
                     .foregroundStyle(selectedTab == index ? RouaTheme.Colors.accent : RouaTheme.Colors.textTertiary)
             }
             .frame(maxWidth: .infinity)

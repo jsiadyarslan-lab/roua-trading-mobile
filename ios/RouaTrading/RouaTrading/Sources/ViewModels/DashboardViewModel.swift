@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Dashboard ViewModel — Loads public + auth data
+// MARK: - Dashboard ViewModel — Loads public + auth data + council + scanner + news
 @MainActor
 class DashboardViewModel: ObservableObject {
     @Published var accountOverview: AccountOverview?
@@ -11,6 +11,11 @@ class DashboardViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
     @Published var isAuthDataAvailable = false
+
+    // New data sources
+    @Published var councilBriefs: [TradingBriefItem] = []
+    @Published var scannerSignals: [ScanResult] = []
+    @Published var newsArticles: [NewsArticle] = []
 
     private let api = APIClient.shared
 
@@ -34,18 +39,24 @@ class DashboardViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        // Always load public market data first (no auth needed)
-        await loadPublicMarketData()
+        // Load all data in parallel
+        async let publicTask: () = loadPublicMarketData()
+        async let authTask: () = loadAuthData()
+        async let briefsTask: () = loadCouncilBriefs()
+        async let scannerTask: () = loadScannerSignals()
+        async let newsTask: () = loadNews()
 
-        // Then try authenticated endpoints
-        await loadAuthData()
+        await publicTask
+        await authTask
+        await briefsTask
+        await scannerTask
+        await newsTask
 
         self.isLoading = false
     }
 
     // MARK: - Public Data (always works, no auth needed)
     private func loadPublicMarketData() async {
-        // Load quotes for popular symbols
         var loadedQuotes: [Quote] = []
         for symbol in popularSymbols.prefix(6) {
             do {
@@ -59,21 +70,16 @@ class DashboardViewModel: ObservableObject {
             }
         }
         self.topQuotes = loadedQuotes
-
-        // Load scanner overview for market sentiment
-        // (This is public data — no auth needed)
     }
 
     // MARK: - Auth Data (requires login)
     private func loadAuthData() async {
-        // Check if we have a session token
         guard APIClient.shared.sessionToken != nil else {
             print("[Dashboard] No session token — skipping auth data")
             self.isAuthDataAvailable = false
             return
         }
 
-        // Use v2/portfolio endpoint (v1 /trading/account is broken — 503)
         do {
             let account: AccountOverview = try await api.request("/trading/v2/portfolio")
             self.accountOverview = account
@@ -94,13 +100,82 @@ class DashboardViewModel: ObservableObject {
         do {
             let historyResponse: TradeHistoryResponse = try await api.request("/trading/history")
             self.trades = historyResponse.trades ?? []
-            print("[Dashboard] ✅ Loaded \(self.trades.count) trade history items")
         } catch {
             print("[Dashboard] Trade history unavailable: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Council Briefs (آخر التوصيات)
+    private func loadCouncilBriefs() async {
+        do {
+            // Try council briefs endpoint
+            let response: CouncilBriefsResponse = try await api.request("/council/briefs?limit=3&isActive=true")
+            self.councilBriefs = response.briefs ?? response.data ?? []
+            print("[Dashboard] ✅ Loaded \(councilBriefs.count) council briefs")
+        } catch {
+            // Fallback: try trading-briefs endpoint
+            do {
+                let response: CouncilBriefsResponse = try await api.request("/ai/briefs?limit=3")
+                self.councilBriefs = response.briefs ?? response.data ?? []
+            } catch {
+                print("[Dashboard] Council briefs unavailable: \(error.localizedDescription)")
+                self.councilBriefs = []
+            }
+        }
+    }
+
+    // MARK: - Scanner Signals (آخر الإشارات)
+    private func loadScannerSignals() async {
+        do {
+            let response: ScannerScanResponse = try await api.request("/scanner/scan?limit=3")
+            self.scannerSignals = response.items ?? []
+            print("[Dashboard] ✅ Loaded \(scannerSignals.count) scanner signals")
+        } catch {
+            print("[Dashboard] Scanner signals unavailable: \(error.localizedDescription)")
+            self.scannerSignals = []
+        }
+    }
+
+    // MARK: - News (آخر الأخبار)
+    private func loadNews() async {
+        do {
+            let response: NewsListResponse = try await api.request("/news/latest?limit=5")
+            self.newsArticles = response.articles ?? response.data ?? []
+            print("[Dashboard] ✅ Loaded \(newsArticles.count) news articles")
+        } catch {
+            print("[Dashboard] News unavailable: \(error.localizedDescription)")
+            self.newsArticles = []
         }
     }
 
     func retry() async {
         await loadDashboard()
     }
+}
+
+// MARK: - Trading Brief Item (for council briefs display)
+struct TradingBriefItem: Codable, Identifiable {
+    let id: String
+    let pair: String
+    let direction: String?
+    let entryPrice: Double?
+    let stopLoss: Double?
+    let takeProfit: Double?
+    let confidence: Double?
+    let timeframe: String?
+    let status: String?
+    let createdAt: String?
+}
+
+// MARK: - API Response types for new endpoints
+struct CouncilBriefsResponse: Codable {
+    let success: Bool?
+    let briefs: [TradingBriefItem]?
+    let data: [TradingBriefItem]?
+}
+
+struct NewsListResponse: Codable {
+    let success: Bool?
+    let articles: [NewsArticle]?
+    let data: [NewsArticle]?
 }

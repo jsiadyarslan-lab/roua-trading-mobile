@@ -169,31 +169,34 @@ struct AICouncilView: View {
                 let data: ConsensusData?
             }
             struct ConsensusData: Codable {
-                let consensus: ConsensusInfo?
-                let votes: [VoteData]?
-            }
-            struct ConsensusInfo: Codable {
-                let score: Int?
-                let direction: String?
-                let masterStrategy: String?
+                let consensusScore: Int?
+                let recommendation: String?
+                let analysisSummary: String?
+                let analyses: [VoteData]?
+                let isFallback: Bool?
             }
             struct VoteData: Codable {
                 let role: String?
-                let direction: String?
+                let vote: String?
                 let confidence: Int?
                 let model: String?
             }
 
-            let response: ConsensusResponse = try await APIClient.shared.request("/ai/consensus")
+            // POST /api/ai/consensus with symbol in body
+            let response: ConsensusResponse = try await APIClient.shared.request(
+                "/ai/consensus",
+                method: "POST",
+                body: ["symbol": "BTC/USDT", "language": "ar"]
+            )
             if let data = response.data {
-                consensusScore = data.consensus?.score
-                consensusDirection = data.consensus?.direction == "BUY" ? "شراء" : data.consensus?.direction == "SELL" ? "بيع" : "إمساك"
-                masterStrategy = data.consensus?.masterStrategy
+                consensusScore = data.consensusScore
+                consensusDirection = data.recommendation == "BUY" ? "شراء" : data.recommendation == "SELL" ? "بيع" : "إمساك"
+                masterStrategy = data.analysisSummary
 
-                votes = (data.votes ?? []).map { v in
+                votes = (data.analyses ?? []).map { v in
                     CouncilVote(
                         role: v.role ?? "غير معروف",
-                        direction: v.direction == "BUY" ? "شراء" : v.direction == "SELL" ? "بيع" : "إمساك",
+                        direction: v.vote == "BUY" ? "شراء" : v.vote == "SELL" ? "بيع" : "إمساك",
                         confidence: v.confidence ?? 0,
                         model: v.model ?? "AI"
                     )
@@ -269,7 +272,7 @@ struct SmartExecutorView: View {
                                     Text(pos.side == "BUY" ? "شراء" : "بيع").font(.system(size: 10)).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
                                 }
                                 Spacer()
-                                if let pnl = pos.unrealizedPnl {
+                                if let pnl = pos.unrealizedPnlValue {
                                     Text(String(format: "%+.2f", pnl)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
                                 }
                             }

@@ -483,10 +483,31 @@ struct AgentPerformance: Codable {
     let sharpeRatio: Double?; let maxDrawdown: Double?
 }
 
+// Backend returns: { id, source, title, translatedTitle, content, translatedContent, summary, imageUrl, url, sentiment, sentimentLabel, impactLevel, affectedAssets, category, categoryAr, publishedAt, newsType, slug, lang, ... }
 struct NewsArticle: Codable, Identifiable {
-    let id: String; let title: String; let summary: String?
-    let source: String?; let url: String?; let sentiment: String?
+    let id: String
+    let title: String
+    let translatedTitle: String?
+    let summary: String?
+    let content: String?
+    let translatedContent: String?
+    let source: String?
+    let url: String?
+    let imageUrl: String?
+    let sentiment: String?
+    let sentimentLabel: String?
+    let impactLevel: String?
+    let affectedAssets: [String]?
+    let category: String?
+    let categoryAr: String?
     let publishedAt: String?
+    let newsType: String?
+    let slug: String?
+    let lang: String?
+
+    // Computed: use translated title if available and app language is Arabic
+    var displayTitle: String { translatedTitle ?? title }
+    var displayCategory: String { categoryAr ?? category ?? "" }
 }
 
 struct MarketSentiment: Codable {

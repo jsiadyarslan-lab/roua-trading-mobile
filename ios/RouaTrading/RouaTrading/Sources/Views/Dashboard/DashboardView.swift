@@ -340,7 +340,7 @@ struct DashboardView: View {
                     GlassCard {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text(article.title)
+                                Text(article.displayTitle)
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(RouaTheme.Colors.textPrimary)
                                     .lineLimit(2)
@@ -355,10 +355,21 @@ struct DashboardView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 4))
                                 }
                             }
-                            if let source = article.source {
-                                Text(source)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(RouaTheme.Colors.textTertiary)
+                            HStack {
+                                if let source = article.source {
+                                    Text(source)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(RouaTheme.Colors.textTertiary)
+                                }
+                                if !article.displayCategory.isEmpty {
+                                    Text(article.displayCategory)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundStyle(RouaTheme.Colors.accent)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(RouaTheme.Colors.accent.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
                             }
                         }
                     }
@@ -368,9 +379,13 @@ struct DashboardView: View {
     }
 }
 
-// MARK: - Smart Executor Placeholder
+// MARK: - Smart Executor View (Connected to backend)
 struct SmartExecutorView: View {
-    @StateObject private var vm = TradingViewModel()
+    @State private var isEnabled = false
+    @State private var isLoading = false
+    @State private var activePositions: [Position] = []
+    @State private var todayExecutions = 0
+    @State private var dailyPnl: Double = 0
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -391,51 +406,73 @@ struct SmartExecutorView: View {
                                 Text("المنفذ الذكي")
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundStyle(RouaTheme.Colors.textPrimary)
-                                Text("ينفذ توصيات المجلس تلقائياً")
+                                Text(isEnabled ? "نشط — ينفذ التوصيات تلقائياً" : "متوقف")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(RouaTheme.Colors.textTertiary)
+                                    .foregroundStyle(isEnabled ? RouaTheme.Colors.profit : RouaTheme.Colors.textTertiary)
                             }
                             Spacer()
-                            PulsingDot(color: RouaTheme.Colors.profit)
+                            Circle()
+                                .fill(isEnabled ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                                .frame(width: 10, height: 10)
                         }
 
                         Divider().background(RouaTheme.Colors.border)
 
                         HStack(spacing: 0) {
-                            StatMini(title: "الصفقات", value: "\(vm.positions.count)")
+                            StatMini(title: "تنفيذات اليوم", value: "\(todayExecutions)")
                                 .frame(maxWidth: .infinity)
                             StatMini(
-                                title: "الربح",
-                                value: vm.portfolioSummary.map { String(format: "$%.2f", $0.unrealizedPnl ?? 0) } ?? "---",
-                                isPositive: (vm.portfolioSummary?.unrealizedPnl ?? 0) >= 0
+                                title: "P&L يومي",
+                                value: String(format: "$%.2f", dailyPnl),
+                                isPositive: dailyPnl >= 0
                             )
                             .frame(maxWidth: .infinity)
+                            StatMini(title: "مراكز مفتوحة", value: "\(activePositions.count)")
+                                .frame(maxWidth: .infinity)
+                        }
+
+                        // Toggle Button
+                        Button {
+                            Task { await toggleExecutor(enable: !isEnabled) }
+                        } label: {
+                            Text(isEnabled ? "إيقاف المنفذ" : "تشغيل المنفذ")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(isEnabled ? RouaTheme.Colors.loss : RouaTheme.Colors.profit)
+                                .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
                         }
                     }
                 }
 
-                // Open Positions
-                if !vm.positions.isEmpty {
-                    VStack(spacing: RouaTheme.Spacing.md) {
-                        Text("الصفقات النشطة")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(RouaTheme.Colors.textPrimary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                // Emergency Stop
+                if isEnabled {
+                    TradingButton(title: "🛑 إيقاف طوارئ — إغلاق الكل", style: .danger, isLoading: false) {
+                        Task { await emergencyStop() }
+                    }
+                }
 
-                        ForEach(vm.positions) { pos in
-                            GlassCard {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 4) {
-                                            Circle().fill(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss).frame(width: 6, height: 6)
-                                            Text(pos.symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                                        }
-                                        Text(pos.side == "BUY" ? "شراء" : "بيع").font(.system(size: 10)).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                // Open Positions
+                if !activePositions.isEmpty {
+                    Text("الصفقات النشطة")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(RouaTheme.Colors.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    ForEach(activePositions) { pos in
+                        GlassCard {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss).frame(width: 6, height: 6)
+                                        Text(pos.symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(RouaTheme.Colors.textPrimary)
                                     }
-                                    Spacer()
-                                    if let pnl = pos.unrealizedPnlValue {
-                                        Text(String(format: "%+.2f", pnl)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
-                                    }
+                                    Text(pos.side == "BUY" ? "شراء" : "بيع").font(.system(size: 10)).foregroundStyle(pos.side == "BUY" ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
+                                }
+                                Spacer()
+                                if let pnl = pos.unrealizedPnlValue {
+                                    Text(String(format: "%+.2f", pnl)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(pnl >= 0 ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
                                 }
                             }
                         }
@@ -445,8 +482,56 @@ struct SmartExecutorView: View {
             .padding(.horizontal, RouaTheme.Spacing.lg)
         }
         .background(RouaTheme.Colors.background)
-        .task { await vm.loadTradingData() }
+        .task { await loadStatus() }
         .navigationTitle("المنفذ الذكي")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func loadStatus() async {
+        do {
+            // GET /api/smart-executor/status → { success, data: { enabled, todayExecutions, dailyPnl, ... } }
+            struct ExecutorStatusData: Codable {
+                let enabled: Bool?
+                let todayExecutions: Int?
+                let dailyPnl: Double?
+                let isRunning: Bool?
+            }
+            struct StatusResponse: Codable {
+                let success: Bool?
+                let data: ExecutorStatusData?
+            }
+            let response: StatusResponse = try await APIClient.shared.request("/smart-executor/status")
+            isEnabled = response.data?.enabled ?? response.data?.isRunning ?? false
+            todayExecutions = response.data?.todayExecutions ?? 0
+            dailyPnl = response.data?.dailyPnl ?? 0
+
+            // Load open positions from smart-executor
+            let positions: [Position] = try await APIClient.shared.request("/smart-executor/positions")
+            activePositions = positions
+        } catch {
+            print("[SmartExecutor] Status error: \(error.localizedDescription)")
+        }
+    }
+
+    private func toggleExecutor(enable: Bool) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let path = enable ? "/smart-executor/user/enable" : "/smart-executor/user/disable"
+            let _: Data = try await APIClient.shared.rawDataRequest(path, method: "POST")
+            isEnabled = enable
+        } catch {
+            print("[SmartExecutor] Toggle error: \(error.localizedDescription)")
+        }
+    }
+
+    private func emergencyStop() async {
+        do {
+            let _: Data = try await APIClient.shared.rawDataRequest("/smart-executor/emergency-stop", method: "POST")
+            isEnabled = false
+            activePositions = []
+        } catch {
+            print("[SmartExecutor] Emergency stop error: \(error.localizedDescription)")
+        }
     }
 }

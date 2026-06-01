@@ -108,28 +108,25 @@ class DashboardViewModel: ObservableObject {
     // MARK: - Council Briefs (آخر التوصيات)
     private func loadCouncilBriefs() async {
         do {
-            // Try council briefs endpoint
-            let response: CouncilBriefsResponse = try await api.request("/council/briefs?limit=3&isActive=true")
-            self.councilBriefs = response.briefs ?? response.data ?? []
-            print("[Dashboard] ✅ Loaded \(councilBriefs.count) council briefs")
+            // GET /api/strategic-council/briefs → { success: true, data: { active: [...], count: N } }
+            let response: CouncilBriefsWrapper = try await api.request("/strategic-council/briefs")
+            let briefs = response.data?.active ?? []
+            self.councilBriefs = Array(briefs.prefix(3))
+            print("[Dashboard] ✅ Loaded \(councilBriefs.count) council briefs (total active: \(briefs.count))")
         } catch {
-            // Fallback: try trading-briefs endpoint
-            do {
-                let response: CouncilBriefsResponse = try await api.request("/ai/briefs?limit=3")
-                self.councilBriefs = response.briefs ?? response.data ?? []
-            } catch {
-                print("[Dashboard] Council briefs unavailable: \(error.localizedDescription)")
-                self.councilBriefs = []
-            }
+            print("[Dashboard] Council briefs unavailable: \(error.localizedDescription)")
+            self.councilBriefs = []
         }
     }
 
     // MARK: - Scanner Signals (آخر الإشارات)
     private func loadScannerSignals() async {
         do {
-            let response: ScannerScanResponse = try await api.request("/scanner/scan?limit=3")
-            self.scannerSignals = response.items ?? []
-            print("[Dashboard] ✅ Loaded \(scannerSignals.count) scanner signals")
+            // GET /api/scanner/scan → { success, items: [...], meta } (no ?limit= param)
+            let response: ScannerScanResponse = try await api.request("/scanner/scan")
+            let allItems = response.items ?? []
+            self.scannerSignals = Array(allItems.prefix(3))
+            print("[Dashboard] ✅ Loaded \(scannerSignals.count) scanner signals (total: \(allItems.count))")
         } catch {
             print("[Dashboard] Scanner signals unavailable: \(error.localizedDescription)")
             self.scannerSignals = []
@@ -139,8 +136,9 @@ class DashboardViewModel: ObservableObject {
     // MARK: - News (آخر الأخبار)
     private func loadNews() async {
         do {
+            // GET /api/news/latest?limit=5 → { success: true, data: [...], count: N }
             let response: NewsListResponse = try await api.request("/news/latest?limit=5")
-            self.newsArticles = response.articles ?? response.data ?? []
+            self.newsArticles = response.data ?? []
             print("[Dashboard] ✅ Loaded \(newsArticles.count) news articles")
         } catch {
             print("[Dashboard] News unavailable: \(error.localizedDescription)")
@@ -154,6 +152,7 @@ class DashboardViewModel: ObservableObject {
 }
 
 // MARK: - Trading Brief Item (for council briefs display)
+// Backend returns: { id, pair, direction, entryPrice, stopLoss, takeProfit, confidence, timeframe, issuedAt, expiresAt, isActive, strictRules, reviewStatus, analysisSummary }
 struct TradingBriefItem: Codable, Identifiable {
     let id: String
     let pair: String
@@ -163,19 +162,32 @@ struct TradingBriefItem: Codable, Identifiable {
     let takeProfit: Double?
     let confidence: Double?
     let timeframe: String?
-    let status: String?
-    let createdAt: String?
+    let isActive: Bool?
+    let issuedAt: String?
+    let expiresAt: String?
+    let reviewStatus: String?
+    let analysisSummary: String?
+
+    // Compat alias
+    var createdAt: String? { issuedAt }
 }
 
 // MARK: - API Response types for new endpoints
-struct CouncilBriefsResponse: Codable {
+
+// GET /api/strategic-council/briefs → { success: true, data: { active: [...], count: N } }
+struct CouncilBriefsWrapper: Codable {
     let success: Bool?
-    let briefs: [TradingBriefItem]?
-    let data: [TradingBriefItem]?
+    let data: CouncilBriefsData?
 }
 
+struct CouncilBriefsData: Codable {
+    let active: [TradingBriefItem]?
+    let count: Int?
+}
+
+// GET /api/news/latest → { success: true, data: [...], count: N }
 struct NewsListResponse: Codable {
     let success: Bool?
-    let articles: [NewsArticle]?
     let data: [NewsArticle]?
+    let count: Int?
 }

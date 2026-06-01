@@ -119,21 +119,70 @@ struct Quote: Codable {
 }
 
 struct Position: Codable, Identifiable {
-    let id: String; let userId: String; let credentialId: String
-    let symbol: String; let side: String; let status: String; let entryPrice: Double
-    let currentPrice: Double?; let quantity: Double; let unrealizedPnl: Double?
-    let realizedPnl: Double?; let stopLoss: Double?; let takeProfit: Double?
-    let source: String?; let createdAt: String; let updatedAt: String
+    let id: String
+    let symbol: String
+    let side: String
+    let quantity: Double
+    let entryPrice: Double
+    let currentPrice: Double?
+    let unrealizedPnL: Double?
+    let stopLoss: Double?
+    let takeProfit: Double?
+    let exchange: String?
+    let openedAt: String?
+    let userId: String?
+    let credentialId: String?
+    let status: String?
+    let realizedPnl: Double?
+    let source: String?
+    let createdAt: String?
+    let updatedAt: String?
+    /// Computed property for view compatibility
+    var unrealizedPnl: Double? { unrealizedPnL }
 }
 
 struct Trade: Codable, Identifiable {
-    let id: String; let symbol: String; let side: String; let type: String
-    let quantity: Double; let price: Double; let pnl: Double?; let createdAt: String
+    let id: String
+    let symbol: String
+    let side: String
+    let entryPrice: Double?
+    let exitPrice: Double?
+    let qty: Double?
+    let realizedPnl: Double?
+    let realizedPct: Double?
+    let closeTime: Double?
+    let status: String?
+    let type: String?
+    /// Computed for view compatibility
+    var quantity: Double { qty ?? 0 }
+    var price: Double { exitPrice ?? entryPrice ?? 0 }
+    var pnl: Double? { realizedPnl }
+    var createdAt: String {
+        if let ct = closeTime {
+            let date = Date(timeIntervalSince1970: ct / 1000)
+            let formatter = ISO8601DateFormatter()
+            return formatter.string(from: date)
+        }
+        return ""
+    }
 }
 
 struct PortfolioSummary: Codable {
-    let totalValue: Double; let totalPnl: Double; let dailyPnl: Double
-    let positions: [Position]?; let unrealizedPnl: Double?; let realizedPnl: Double?
+    let totalBalance: Double?
+    let dailyPnL: Double?
+    let dailyPnLPercent: Double?
+    let totalExposure: Double?
+    let usedMargin: Double?
+    let openPositionsCount: Int?
+    let maxDrawdownPercent: Double?
+    let unrealizedPnL: Double?
+    let positions: [Position]?
+    /// Computed for view compatibility
+    var totalValue: Double { totalBalance ?? 0 }
+    var dailyPnl: Double { dailyPnL ?? 0 }
+    var totalPnl: Double { unrealizedPnL ?? 0 }
+    var unrealizedPnl: Double? { unrealizedPnL }
+    var realizedPnl: Double? { nil }
 }
 
 struct PlaceOrderRequest: Codable {
@@ -146,20 +195,47 @@ struct V2PlaceOrderResponse: Codable { let success: Bool; let data: V2OrderData 
 struct V2OrderData: Codable { let orderId: String; let status: String; let idempotencyKey: String; let riskScore: Double? }
 
 struct ScanResult: Codable, Identifiable {
-    let id: String?; let symbol: String; let name: String?; let price: Double
-    let change: Double; let changePercent: Double; let volume: Double?; let signal: String?
+    let id: String?
+    let symbol: String
+    let name: String?
+    let price: Double?
+    let change: Double?
+    let changePercent: Double?
+    let volume: Double?
+    let signal: String?
+    let direction: String?
+    let technicalScore: Double?
+    let confidence: Double?
+    let rsi: Double?
+    let category: String?
 }
 
 struct HeatmapItem: Codable, Identifiable {
-    var id: String { symbol }; let symbol: String; let name: String?
-    let change: Double; let volume: Double?
+    var id: String { symbol }
+    let symbol: String
+    let name: String?
+    let changePercent: Double?
+    let volume: Double?
+    let change: Double? { changePercent }
+    let direction: String?
+    let technicalScore: Double?
+    let category: String?
 }
 
 struct AIAnalyzeRequest: Codable { let prompt: String; let analysisType: String?; let analysisSymbol: String?; let language: String?; enum CodingKeys: String, CodingKey { case prompt; case analysisType = "type"; case analysisSymbol = "symbol"; case language } }
 struct AIAnalyzeResponse: Codable { let analysis: String; let model: String?; let provider: String? }
 
 struct ExchangeCredential: Codable, Identifiable {
-    let id: String; let exchange: String; let label: String; let testnet: Bool; let createdAt: String
+    let id: String
+    let exchange: String
+    let label: String
+    let isValid: Bool?
+    let permissions: String?
+    let lastValidatedAt: String?
+    let createdAt: String?
+    let updatedAt: String?
+    /// Computed for view compatibility
+    var testnet: Bool { exchange.lowercased().contains("testnet") || exchange.lowercased().contains("paper") }
 }
 
 struct UserNotification: Codable, Identifiable {
@@ -217,8 +293,21 @@ struct MarketSentiment: Codable {
 }
 
 struct ScannerOverview: Codable {
-    let totalScanned: Int?; let bullish: Int?; let bearish: Int?
-    let neutral: Int?; let topGainer: String?; let topLoser: String?
+    let totalScanned: Int?
+    let bullishCount: Int?
+    let bearishCount: Int?
+    let neutralCount: Int?
+    let topGainers: [HeatmapItem]?
+    let topLosers: [HeatmapItem]?
+    let strongestSignals: [ScanResult]?
+    let marketSentiment: String?
+    let sentimentScore: Int?
+    /// Computed for view compatibility
+    var bullish: Int? { bullishCount }
+    var bearish: Int? { bearishCount }
+    var neutral: Int? { neutralCount }
+    var topGainer: String? { topGainers?.first?.symbol }
+    var topLoser: String? { topLosers?.first?.symbol }
 }
 
 struct SymbolAnalysis: Codable {
@@ -228,7 +317,17 @@ struct SymbolAnalysis: Codable {
 }
 
 struct AIModel: Codable, Identifiable {
-    var id: String { name }; let name: String; let provider: String?; let active: Bool?
+    var id: String { name }
+    let name: String
+    let provider: String?
+    let available: Bool?
+    let model: String?
+    var active: Bool? { available }
+}
+
+struct AIProviderInfo: Codable {
+    let available: Bool?
+    let model: String?
 }
 
 struct AIConsensusRequest: Codable { let prompt: String; let models: [String]? }
@@ -251,8 +350,33 @@ struct NotificationPreferences: Codable {
 struct UnreadCount: Codable { let count: Int? }
 
 struct CredentialBalance: Codable, Identifiable {
-    var id: String { credentialId }; let credentialId: String; let exchange: String?
-    let totalBalance: Double?; let availableBalance: Double?; let currency: String?
+    var id: String { credentialId }
+    let credentialId: String
+    let exchange: String?
+    let totalBalance: Double?
+    let availableBalance: Double?
+    let currency: String?
+}
+
+struct BalancesResponse: Codable {
+    let totalEquityUsd: Double?
+    let totalAvailableUsd: Double?
+    let totalUsedMargin: Double?
+    let exchanges: [ExchangeBalance]?
+    let allRealExchangesFailed: Bool?
+    let hasRealCredentials: Bool?
+}
+
+struct ExchangeBalance: Codable, Identifiable {
+    var id: String { credentialId ?? UUID().uuidString }
+    let exchange: String?
+    let label: String?
+    let credentialId: String?
+    let isTestnet: Bool?
+    let equity: Double?
+    let available: Double?
+    let currency: String?
+    let usedMargin: Double?
 }
 
 struct SanctuaryInfo: Codable {
@@ -261,9 +385,21 @@ struct SanctuaryInfo: Codable {
 }
 
 struct V2Order: Codable, Identifiable {
-    let id: String; let symbol: String; let side: String; let type: String
-    let quantity: Double; let price: Double?; let status: String?
-    let createdAt: String?; let stopLoss: Double?; let takeProfit: Double?
+    let id: String
+    let symbol: String
+    let side: String
+    let type: String
+    let quantity: Double
+    let price: Double?
+    let status: String?
+    let createdAt: String?
+    let stopLoss: Double?
+    let takeProfit: Double?
+    let filledQuantity: Double?
+    let averagePrice: Double?
+    let fee: Double?
+    let feeCurrency: String?
+    let exchangeOrderId: String?
 }
 
 struct AccountInfo: Codable {
@@ -337,18 +473,14 @@ class APIClient: @unchecked Sendable {
         c.timeoutIntervalForRequest = APIConfig.requestTimeout
         c.httpShouldSetCookies = false
         self.session = URLSession(configuration: c)
-        self.decoder.keyDecodingStrategy = .useDefaultKeys
     }
     
-    private func unwrapResponse(_ data: Data) -> Data {
-        guard let wrapper = try? decoder.decode(ApiResponseWrapper.self, from: data),
-              wrapper.success == true,
-              let innerData = wrapper.data else { return data }
-        return try! JSONEncoder().encode(innerData)
-    }
-    
-    func request<T: Codable>(_ path: String, method: String = "GET", bodyData: Data? = nil) async throws -> T {
-        let url = URL(string: "\(APIConfig.baseURL)\(path)")!
+    /// Raw request returning raw Data
+    func rawRequest(_ path: String, method: String = "GET", bodyData: Data? = nil) async throws -> Data {
+        let urlString = "\(APIConfig.baseURL)\(path)"
+        guard let url = URL(string: urlString) else {
+            throw APIError.networkError("Invalid URL: \(urlString)")
+        }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -359,16 +491,69 @@ class APIClient: @unchecked Sendable {
         if let bodyData { req.httpBody = bodyData }
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw APIError.networkError("Invalid response") }
+        print("[API] \(method) \(path) -> \(http.statusCode)")
         guard http.statusCode != 401 else { throw APIError.unauthorized }
         guard (200...299).contains(http.statusCode) else {
-            throw APIError.serverError(http.statusCode, String(data: data, encoding: .utf8) ?? "Unknown")
+            let body = String(data: data, encoding: .utf8) ?? "Unknown"
+            print("[API] Error body: \(body.prefix(500))")
+            throw APIError.serverError(http.statusCode, body)
         }
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            let unwrapped = unwrapResponse(data)
-            return try decoder.decode(T.self, from: unwrapped)
+        return data
+    }
+    
+    /// Request that auto-unwraps { success: true, data: T } responses
+    func request<T: Codable>(_ path: String, method: String = "GET", bodyData: Data? = nil) async throws -> T {
+        let data = try await rawRequest(path, method: method, bodyData: bodyData)
+        // Try direct decode first
+        if let result = try? JSONDecoder().decode(T.self, from: data) {
+            return result
         }
+        // Try unwrapping { success, data } wrapper
+        let wrapper = try JSONDecoder().decode(ApiResponseWrapper.self, from: data)
+        if let innerData = wrapper.data {
+            let innerJson = try JSONEncoder().encode(innerData)
+            if let result = try? JSONDecoder().decode(T.self, from: innerJson) {
+                return result
+            }
+        }
+        // Try extracting from JSON dynamically
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let reData = try JSONSerialization.data(withJSONObject: json)
+            if let result = try? JSONDecoder().decode(T.self, from: reData) {
+                return result
+            }
+        }
+        print("[API] Failed to decode response from \(path): \(String(data: data, encoding: .utf8)?.prefix(500) ?? "nil")")
+        throw APIError.networkError("Failed to decode response")
+    }
+    
+    /// Request that extracts a specific key from the response JSON
+    func request<T: Codable>(_ path: String, key: String, method: String = "GET", bodyData: Data? = nil) async throws -> T {
+        let data = try await rawRequest(path, method: method, bodyData: bodyData)
+        // Try extracting the specific key from the JSON
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let value = json[key] {
+            let valueData = try JSONSerialization.data(withJSONObject: value)
+            if let result = try? JSONDecoder().decode(T.self, from: valueData) {
+                return result
+            }
+        }
+        // Fallback: try unwrapping { success, data } first, then extract key
+        if let wrapper = try? JSONDecoder().decode(ApiResponseWrapper.self, from: data),
+           let innerData = wrapper.data,
+           let innerDict = innerData.value as? [String: Any],
+           let value = innerDict[key] {
+            let valueData = try JSONSerialization.data(withJSONObject: value)
+            if let result = try? JSONDecoder().decode(T.self, from: valueData) {
+                return result
+            }
+        }
+        // Final fallback: direct decode
+        if let result = try? JSONDecoder().decode(T.self, from: data) {
+            return result
+        }
+        print("[API] Failed to decode key '\(key)' from \(path): \(String(data: data, encoding: .utf8)?.prefix(500) ?? "nil")")
+        throw APIError.networkError("Failed to decode response for key '\(key)'")
     }
 }
 
@@ -693,15 +878,43 @@ class AuthManager: ObservableObject {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid code"])
             }
+            // Try to extract session token from response
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Check for token in response
+                if let token = json["token"] as? String, !token.isEmpty {
+                    APIClient.shared.sessionToken = token
+                }
+                // Also check for token in nested data
+                if let dataObj = json["data"] as? [String: Any], let token = dataObj["token"] as? String, !token.isEmpty {
+                    APIClient.shared.sessionToken = token
+                }
+            }
+            // Check for Set-Cookie header with roua_session
+            if let httpResponse = response as? HTTPURLResponse,
+               let setCookie = httpResponse.allHeaderFields["Set-Cookie"] as? String,
+               let tokenRange = setCookie.range(of: "roua_session=") {
+                let afterToken = setCookie[tokenRange.upperBound...]
+                let token = afterToken.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !token.isEmpty {
+                    APIClient.shared.sessionToken = token
+                }
+            }
+            // Now verify session with /auth/me
             struct OTPVerifyResponse: Codable { let authenticated: Bool?; let success: Bool? }
             let otpResp = try? JSONDecoder().decode(OTPVerifyResponse.self, from: data)
-            if otpResp?.authenticated == true || otpResp?.success == true {
-                let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
-                if meResponse.isValid, let user = meResponse.user {
-                    self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false
-                } else {
-                    self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false
+            if otpResp?.authenticated == true || otpResp?.success == true || APIClient.shared.sessionToken != nil {
+                // Retry /auth/me up to 3 times
+                for attempt in 1...3 {
+                    if attempt > 1 {
+                        try? await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
+                    }
+                    let meResponse: AuthVerifyResponse = try await api.request("/auth/me")
+                    if meResponse.isValid, let user = meResponse.user {
+                        self.currentUser = user; self.isAuthenticated = true; self.isOTPLoading = false
+                        return
+                    }
                 }
+                self.errorMessage = "Login failed - could not verify session"; self.isOTPLoading = false
             } else {
                 self.errorMessage = "Invalid verification code"; self.isOTPLoading = false
             }
@@ -769,19 +982,26 @@ class DashboardViewModel: ObservableObject {
     @Published var positions: [Position] = []
     @Published var trades: [Trade] = []
     @Published var isLoading = false
+    @Published var errorMessage: String?
     private let api = APIClient.shared
     
     func loadDashboard() async {
-        await MainActor.run { isLoading = true }
+        await MainActor.run { isLoading = true; errorMessage = nil }
         do {
+            // /trading/v2/portfolio returns { success, data: { totalBalance, ... } }
             let portfolio: PortfolioSummary = try await api.request("/trading/v2/portfolio")
+            // /trading/v2/positions returns { success, data: [...] }
             let positions: [Position] = try await api.request("/trading/v2/positions")
-            let trades: [Trade] = try await api.request("/trading/history")
+            // /trading/history returns { success, trades: [...] } - extract "trades" key
+            let trades: [Trade] = try await api.request("/trading/history", key: "trades")
             await MainActor.run {
                 self.portfolioSummary = portfolio; self.positions = positions
                 self.trades = Array(trades.prefix(10)); self.isLoading = false
             }
-        } catch { await MainActor.run { isLoading = false } }
+        } catch {
+            print("[Dashboard] Error: \(error)")
+            await MainActor.run { self.errorMessage = error.localizedDescription; self.isLoading = false }
+        }
     }
 }
 
@@ -805,17 +1025,21 @@ class TradingViewModel: ObservableObject {
     
     func loadTradingData() async {
         do {
-            let quote: Quote = try await api.request("/exchange/quote/\(symbol)")
+            let encodedSymbol = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
+            // /exchange/quote/BTC%2FUSDT returns { success, data: { symbol, price, ... } }
+            let quote: Quote = try await api.request("/exchange/quote/\(encodedSymbol)", key: "data")
             let positions: [Position] = try await api.request("/trading/v2/positions")
             await MainActor.run { self.currentQuote = quote; self.positions = positions }
-        } catch {}
+        } catch {
+            print("[Trading] loadTradingData error: \(error)")
+        }
     }
     
     func loadOrders() async {
         await MainActor.run { isLoadingOrders = true }
         do {
             let orders: [V2Order] = try await api.request("/trading/v2/orders")
-            let trades: [Trade] = try await api.request("/trading/history")
+            let trades: [Trade] = try await api.request("/trading/history", key: "trades")
             await MainActor.run { self.orders = orders; self.trades = Array(trades.prefix(20)); self.isLoadingOrders = false }
         } catch { await MainActor.run { isLoadingOrders = false } }
     }
@@ -856,9 +1080,31 @@ class AIViewModel: ObservableObject {
     
     func loadModels() async {
         do {
-            let models: [AIModel] = try await api.request("/ai/models")
+            // /ai/models returns { success, data: { groq: { available, model }, ... } }
+            let data = try await api.rawRequest("/ai/models")
+            // Try extracting from { success, data: {...} } wrapper
+            var modelsDict: [String: Any] = [:]
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let innerData = json["data"] as? [String: Any] {
+                    modelsDict = innerData
+                } else {
+                    // Maybe data is at top level without wrapper
+                    modelsDict = json
+                }
+            }
+            let models = modelsDict.compactMap { (key, value) -> AIModel? in
+                guard let info = value as? [String: Any] else { return nil }
+                return AIModel(
+                    name: key,
+                    provider: key,
+                    available: info["available"] as? Bool,
+                    model: info["model"] as? String
+                )
+            }
             await MainActor.run { self.availableModels = models }
-        } catch {}
+        } catch {
+            print("[AI] loadModels error: \(error)")
+        }
     }
     
     func sendMessage() async {
@@ -900,17 +1146,25 @@ class ScannerViewModel: ObservableObject {
     func runScan() async {
         await MainActor.run { isLoading = true }
         do {
-            let results: [ScanResult] = try await api.request("/scanner/scan?timeframe=\(timeframe)&category=\(category)")
-            let heatmap: [HeatmapItem] = try await api.request("/scanner/heatmap?category=\(category)")
+            // /scanner/scan returns { success, items: [...] } - items at top level
+            let results: [ScanResult] = try await api.request("/scanner/scan?timeframe=\(timeframe)&category=\(category)", key: "items")
+            // /scanner/heatmap returns { success, data: [...] }
+            let heatmap: [HeatmapItem] = try await api.request("/scanner/heatmap?category=\(category)", key: "data")
             await MainActor.run { self.results = results; self.heatmapData = heatmap; self.isLoading = false }
-        } catch { await MainActor.run { isLoading = false } }
+        } catch {
+            print("[Scanner] runScan error: \(error)")
+            await MainActor.run { isLoading = false }
+        }
     }
     
     func loadOverview() async {
         do {
-            let overview: ScannerOverview = try await api.request("/scanner/overview")
+            // /scanner/overview returns { success, data: { totalScanned, bullishCount, ... } }
+            let overview: ScannerOverview = try await api.request("/scanner/overview", key: "data")
             await MainActor.run { self.overview = overview }
-        } catch {}
+        } catch {
+            print("[Scanner] loadOverview error: \(error)")
+        }
     }
     
     func loadAnalysis(symbol: String) async {
@@ -924,26 +1178,38 @@ class ScannerViewModel: ObservableObject {
 
 class PortfolioViewModel: ObservableObject {
     @Published var credentials: [ExchangeCredential] = []
-    @Published var balances: [CredentialBalance] = []
+    @Published var balanceResponse: BalancesResponse?
     @Published var sanctuary: SanctuaryInfo?
     @Published var totalValue: Double = 0
     @Published var isLoading = false
     @Published var errorMessage: String?
     private let api = APIClient.shared
     
+    /// Computed for view compatibility
+    var balances: [ExchangeBalance] { balanceResponse?.exchanges ?? [] }
+    
     func loadData() async {
         await MainActor.run { isLoading = true }
         do {
             let creds: [ExchangeCredential] = try await api.request("/portfolio/credentials")
             await MainActor.run { self.credentials = creds; self.isLoading = false }
-        } catch { await MainActor.run { isLoading = false } }
+        } catch {
+            print("[Portfolio] loadData error: \(error)")
+            await MainActor.run { self.isLoading = false }
+        }
     }
     
     func loadBalances() async {
         do {
-            let balances: [CredentialBalance] = try await api.request("/portfolio/credentials/balances")
-            await MainActor.run { self.balances = balances }
-        } catch {}
+            // /portfolio/credentials/balances returns { success, data: { totalEquityUsd, exchanges: [...] } }
+            let balances: BalancesResponse = try await api.request("/portfolio/credentials/balances")
+            await MainActor.run {
+                self.balanceResponse = balances
+                self.totalValue = balances.totalEquityUsd ?? 0
+            }
+        } catch {
+            print("[Portfolio] loadBalances error: \(error)")
+        }
     }
     
     func loadSanctuary() async {
@@ -1874,8 +2140,8 @@ struct ScannerView: View {
                                 }
                                 Spacer()
                                 VStack(alignment: .trailing, spacing: 4) {
-                                    Text(String(format: "%.2f", r.price)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                                    ChangeBadge(value: r.changePercent)
+                                    Text(String(format: "%.2f", r.price ?? 0)).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary)
+                                    ChangeBadge(value: r.changePercent ?? 0)
                                 }
                             }
                         }
@@ -1956,8 +2222,8 @@ struct PortfolioView: View {
                                     }
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 4) {
-                                        if let total = bal.totalBalance { Text(String(format: "$%.2f", total)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
-                                        if let avail = bal.availableBalance { Text("Avail: \(String(format: "%.2f", avail))").font(.system(size: 11, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary) }
+                                        if let total = bal.equity { Text(String(format: "$%.2f", total)).font(.system(size: 14, weight: .semibold, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
+                                        if let avail = bal.available { Text("Avail: \(String(format: "%.2f", avail))").font(.system(size: 11, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary) }
                                     }
                                 }.padding(.vertical, 4)
                             }

@@ -134,8 +134,8 @@ struct SymbolPickerView: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "ابحث عن زوج تداول..."  // Search for a trading pair...
             )
-            .onChange(of: searchText) { newValue in
-                performSearch(newValue)
+            .onChange(of: searchText) {
+                performSearch(searchText)
             }
         }
         .presentationBackground(Color.rouaBackground)

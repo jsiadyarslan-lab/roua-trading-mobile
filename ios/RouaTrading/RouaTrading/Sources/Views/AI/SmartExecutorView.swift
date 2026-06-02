@@ -148,7 +148,7 @@ struct SmartExecutorView: View {
         GlassCard {
             HStack(spacing: RouaSpacing.lg) {
                 VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                    Text(viewModel.executorState?.enabled == true ? "المنفذ مفعّل" : "تفعيل المنفذ")
+                    Text(viewModel.userExecutorState?.enabled == true ? "المنفذ مفعّل" : "تفعيل المنفذ")
                         .rouaFont(.calloutBold, color: .rouaTextPrimary)
                     Text("السماح بالتداول التلقائي")
                         .rouaFont(.caption, color: .rouaTextTertiary)
@@ -156,7 +156,7 @@ struct SmartExecutorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Toggle("", isOn: Binding(
-                    get: { viewModel.executorState?.enabled ?? false },
+                    get: { viewModel.userExecutorState?.enabled ?? false },
                     set: { newValue in
                         viewModel.toggleExecutor(enabled: newValue)
                     }
@@ -190,7 +190,7 @@ struct SmartExecutorView: View {
                     VStack(alignment: .leading, spacing: RouaSpacing.xs) {
                         Text("أقصى مراكز")
                             .rouaFont(.caption, color: .rouaTextTertiary)
-                        Text("\(viewModel.executorState?.maxOpenPositions ?? 3)")
+                        Text("\(viewModel.userExecutorState?.maxOpenPositions ?? 3)")
                             .rouaFont(.calloutBold, color: .rouaTextPrimary)
                             .monospacedDigit()
                     }
@@ -198,7 +198,7 @@ struct SmartExecutorView: View {
                     VStack(alignment: .leading, spacing: RouaSpacing.xs) {
                         Text("مخاطر لكل صفقة")
                             .rouaFont(.caption, color: .rouaTextTertiary)
-                        Text(String(format: "%.1f%%", viewModel.executorState?.riskPerTradePercent ?? 1.0))
+                        Text(String(format: "%.1f%%", viewModel.userExecutorState?.riskPerTradePercent ?? 1.0))
                             .rouaFont(.calloutBold, color: .rouaTextPrimary)
                             .monospacedDigit()
                     }
@@ -314,7 +314,7 @@ struct SmartExecutorView: View {
                         DebugRow(label: "النشاط الأخير", value: viewModel.executorStatus?.lastActivity ?? "—")
                         DebugRow(label: "مدة التشغيل", value: viewModel.executorStatus?.formattedUptime ?? "—")
                         DebugRow(label: "عدد المراكز", value: "\(viewModel.executorPositions.count)")
-                        DebugRow(label: "تنفيذ تلقائي", value: (viewModel.executorState?.autoExecuteSignals ?? false) ? "نعم" : "لا")
+                        DebugRow(label: "تنفيذ تلقائي", value: (viewModel.userExecutorState?.autoExecuteSignals ?? false) ? "نعم" : "لا")
                     }
                 }
             }
@@ -509,9 +509,9 @@ struct ExecutorConfigSheet: View {
             }
         }
         .onAppear {
-            maxPositions = Double(viewModel.executorState?.maxOpenPositions ?? 3)
-            riskPercent = viewModel.executorState?.riskPerTradePercent ?? 1.0
-            autoExecute = viewModel.executorState?.autoExecuteSignals ?? false
+            maxPositions = Double(viewModel.userExecutorState?.maxOpenPositions ?? 3)
+            riskPercent = viewModel.userExecutorState?.riskPerTradePercent ?? 1.0
+            autoExecute = viewModel.userExecutorState?.autoExecuteSignals ?? false
         }
     }
 }

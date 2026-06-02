@@ -117,6 +117,30 @@ extension Color {
     // MARK: - Hex Initializer
 }
 
+// MARK: - ShapeStyle Conformance (for .foregroundStyle(.rouaXxx) syntax)
+//
+// SwiftUI's .foregroundStyle() uses ShapeStyle member lookup.
+// Custom Color extensions are NOT automatically visible through ShapeStyle
+// unless we explicitly declare them via "extension ShapeStyle where Self == Color".
+// This is the official Apple-recommended pattern for custom design system colors.
+
+extension ShapeStyle where Self == Color {
+    static var rouaPrimary: Color { Color.rouaPrimary }
+    static var rouaSecondary: Color { Color.rouaSecondary }
+    static var rouaAccent: Color { Color.rouaAccent }
+    static var rouaProfit: Color { Color.rouaProfit }
+    static var rouaLoss: Color { Color.rouaLoss }
+    static var rouaBuy: Color { Color.rouaBuy }
+    static var rouaSell: Color { Color.rouaSell }
+    static var rouaWarning: Color { Color.rouaWarning }
+    static var rouaInfo: Color { Color.rouaInfo }
+    static var rouaNeutral: Color { Color.rouaNeutral }
+    static var rouaTextPrimary: Color { Color.rouaTextPrimary }
+    static var rouaTextSecondary: Color { Color.rouaTextSecondary }
+    static var rouaTextTertiary: Color { Color.rouaTextTertiary }
+    static var rouaTextDisabled: Color { Color.rouaTextDisabled }
+}
+
 // MARK: - SwiftUI ColorScheme Convenience
 
 extension Color {

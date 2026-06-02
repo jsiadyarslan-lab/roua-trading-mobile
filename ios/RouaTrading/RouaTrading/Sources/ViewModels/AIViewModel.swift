@@ -60,6 +60,9 @@ final class AIViewModel: ObservableObject {
     /// The user's personal Smart Executor configuration.
     @Published var userExecutorState: UserExecutorState?
 
+    /// Current exposure metrics for the Smart Executor.
+    @Published var executorExposure: ExecutorExposure?
+
     /// AI Coach advice entries.
     @Published var coachAdvice: [CoachAdvice] = []
 
@@ -230,7 +233,7 @@ final class AIViewModel: ObservableObject {
     func loadExposure() async {
         do {
             let exposure: ExecutorExposure = try await apiClient.request(.executorExposure)
-            // Update executor positions from exposure data
+            self.executorExposure = exposure
             self.executorPositions = exposure.positions
         } catch {
             logger.error("Failed to load executor exposure: \(error.localizedDescription)")
@@ -286,6 +289,31 @@ final class AIViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    /// Toggles the Smart Executor on or off.
+    ///
+    /// - Parameter enabled: `true` to enable, `false` to disable.
+    func toggleExecutor(enabled: Bool) {
+        if enabled {
+            let maxPos = userExecutorState?.maxOpenPositions ?? 3
+            let risk = userExecutorState?.riskPerTradePercent ?? 1.0
+            Task { await enableExecutor(maxPositions: maxPos, riskPercent: risk) }
+        } else {
+            Task { await disableExecutor() }
+        }
+    }
+
+    /// Updates the Smart Executor configuration.
+    ///
+    /// - Parameters:
+    ///   - maxPositions: Maximum number of concurrent open positions.
+    ///   - riskPercent: Risk percentage per trade.
+    ///   - autoExecute: Whether to auto-execute signals.
+    func updateExecutorConfig(maxPositions: Int, riskPercent: Double, autoExecute: Bool) {
+        Task {
+            await enableExecutor(maxPositions: maxPositions, riskPercent: riskPercent)
+        }
     }
 
     /// Triggers an emergency stop for the Smart Executor.

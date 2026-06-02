@@ -63,6 +63,12 @@ final class TradingViewModel: ObservableObject {
     /// Whether a loading operation is in progress.
     @Published var isLoading: Bool = false
 
+    /// Exchange credentials for order placement.
+    @Published var credentials: [Credential] = []
+
+    /// Whether an order is currently being placed.
+    @Published var isPlacingOrder: Bool = false
+
     /// The most recent error message, if any.
     @Published var errorMessage: String?
 
@@ -85,7 +91,7 @@ final class TradingViewModel: ObservableObject {
 
     // MARK: - Load All Data
 
-    /// Loads chart data, quote, positions, and trade history in parallel.
+    /// Loads chart data, quote, positions, credentials, and trade history in parallel.
     func loadAllData() {
         Task {
             isLoading = true
@@ -96,6 +102,7 @@ final class TradingViewModel: ObservableObject {
                 group.addTask { await self.loadQuote() }
                 group.addTask { await self.loadPositions() }
                 group.addTask { await self.loadTradeHistory() }
+                group.addTask { await self.loadCredentials() }
             }
 
             isLoading = false
@@ -157,6 +164,16 @@ final class TradingViewModel: ObservableObject {
 
     // MARK: - Trade History
 
+    /// Loads exchange credentials for order placement.
+    func loadCredentials() async {
+        do {
+            let creds: [Credential] = try await apiClient.request(.portfolioCredentials)
+            self.credentials = creds
+        } catch {
+            logger.error("Failed to load credentials: \(error.localizedDescription)")
+        }
+    }
+
     /// Loads closed trade history.
     func loadTradeHistory() async {
         do {
@@ -176,7 +193,7 @@ final class TradingViewModel: ObservableObject {
     ///
     /// - Parameter request: The order request payload.
     func placeOrder(_ request: OrderRequest) async {
-        isLoading = true
+        isPlacingOrder = true
         errorMessage = nil
 
         do {
@@ -194,7 +211,7 @@ final class TradingViewModel: ObservableObject {
             logger.error("Failed to place order: \(error.localizedDescription)")
         }
 
-        isLoading = false
+        isPlacingOrder = false
     }
 
     // MARK: - Close Position

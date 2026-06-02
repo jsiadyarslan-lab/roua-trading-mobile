@@ -18,6 +18,15 @@
 import SwiftUI
 import LightweightCharts
 
+// MARK: - Volume Data Point
+
+/// Data point for the volume histogram overlay on the chart.
+struct VolumeDataPoint {
+    let time: Int
+    let value: Double
+    let color: Color
+}
+
 // MARK: - Chart View
 
 /// SwiftUI wrapper for TradingView LightweightCharts v4.
@@ -37,10 +46,11 @@ struct ChartView: UIViewRepresentable {
     let candles: [CandleData]
 
     /// Volume data for the histogram overlay.
-    let volumeData: [VolumeDataPoint]
+    /// Derived from candles if not provided explicitly.
+    var volumeData: [VolumeDataPoint] = []
 
     /// Optional live (partial) candle from WebSocket — updated in real time.
-    let liveCandle: CandleData?
+    var liveCandle: CandleData? = nil
 
     /// Callback when the user moves the crosshair.
     let onCrosshairMove: ((TimeInterval, Double?) -> Void)?
@@ -119,12 +129,13 @@ class ChartCoordinator: NSObject, ChartViewDelegate {
     let onCrosshairMove: ((TimeInterval, Double?) -> Void)?
 
     var previousCandles: [CandleData]?
-    var previousVolumeData: [VolumeDataPoint]?
+    var previousVolumeData: [VolumeDataPoint]
     var previousAnnotations: [PriceLineAnnotation] = []
     var hasInitializedData: Bool = false
 
     init(onCrosshairMove: ((TimeInterval, Double?) -> Void)?) {
         self.onCrosshairMove = onCrosshairMove
+        self.previousVolumeData = []
     }
 
     func chartView(
@@ -440,11 +451,9 @@ extension Color {
         return result
     }()
 
-    let mockVolume = mockCandles.map { VolumeDataPoint(time: $0.time, value: $0.volume, color: $0.isBullish ? .rouaProfit : .rouaLoss) }
-
     ChartView(
         candles: mockCandles,
-        volumeData: mockVolume,
+        volumeData: mockCandles.map { VolumeDataPoint(time: $0.time, value: $0.volume, color: $0.isBullish ? .rouaProfit : .rouaLoss) },
         liveCandle: nil,
         onCrosshairMove: nil
     )

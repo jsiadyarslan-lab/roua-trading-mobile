@@ -9,30 +9,6 @@
 
 import Foundation
 
-// MARK: - Generic API Response
-
-/// Wraps every response from the NestJS backend.
-///
-/// The backend shape is `{ success, data, message }`.  When `success` is
-/// `false`, `data` is typically `null` and `message` describes the error.
-struct APIResponse<T: Codable>: Codable {
-    /// Whether the request was processed successfully.
-    let success: Bool
-    /// The payload – `nil` when `success` is false or the endpoint returns
-    /// no data.
-    let data: T?
-    /// Human-readable status / error message from the server.
-    let message: String?
-
-    // ---- Computed helpers ----
-
-    /// Convenience flag – opposite of `success`.
-    var isFailure: Bool { !success }
-
-    /// The error message, falling back to a generic string.
-    var errorMessage: String { message ?? "An unknown error occurred." }
-}
-
 // MARK: - Paginated Response
 
 /// Generic wrapper for paginated list endpoints.
@@ -61,34 +37,6 @@ struct PaginatedResponse<T: Codable>: Codable {
 
     /// Whether a previous page exists.
     var hasPreviousPage: Bool { page > 1 }
-}
-
-// MARK: - API Error
-
-/// Typed errors produced by the networking layer.
-///
-/// These are **not** decoded from JSON – they are constructed locally when
-/// an HTTP response or decoding failure is encountered.
-enum APIError: Error, LocalizedError {
-    case networkError(String)
-    case unauthorized
-    case forbidden
-    case notFound
-    case serverError(String)
-    case decodingError(String)
-    case unknown
-
-    var errorDescription: String? {
-        switch self {
-        case .networkError(let msg):      return "Network error: \(msg)"
-        case .unauthorized:               return "Session expired. Please sign in again."
-        case .forbidden:                  return "You do not have permission for this action."
-        case .notFound:                   return "The requested resource was not found."
-        case .serverError(let msg):       return "Server error: \(msg)"
-        case .decodingError(let msg):     return "Data error: \(msg)"
-        case .unknown:                    return "An unknown error occurred."
-        }
-    }
 }
 
 // MARK: - Time Frame

@@ -115,35 +115,6 @@ extension Color {
     )
 
     // MARK: - Hex Initializer
-
-    /// Creates a `Color` from a hexadecimal string.
-    /// Supports 6-character (RGB) and 8-character (RGBA) formats, with or without `#` prefix.
-    /// - Parameter hex: Hex string, e.g. `"FF1744"` or `"FF1744CC"`.
-    init(hex: String) {
-        let sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "#", with: "")
-
-        var rgbValue: UInt64 = 0
-        Scanner(string: sanitized).scanHexInt64(&rgbValue)
-
-        let a, r, g, b: UInt64
-        switch sanitized.count {
-        case 6: // RGB
-            (a, r, g, b) = (255, (rgbValue >> 16) & 0xFF, (rgbValue >> 8) & 0xFF, rgbValue & 0xFF)
-        case 8: // RGBA
-            (a, r, g, b) = ((rgbValue >> 24) & 0xFF, (rgbValue >> 16) & 0xFF, (rgbValue >> 8) & 0xFF, rgbValue & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-
-        self.init(
-            .sRGB,
-            red: Double(r) / 255.0,
-            green: Double(g) / 255.0,
-            blue: Double(b) / 255.0,
-            opacity: Double(a) / 255.0
-        )
-    }
 }
 
 // MARK: - SwiftUI ColorScheme Convenience

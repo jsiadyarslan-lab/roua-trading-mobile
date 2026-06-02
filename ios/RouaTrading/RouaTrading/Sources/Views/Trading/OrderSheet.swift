@@ -65,7 +65,7 @@ struct OrderSheet: View {
 
     /// Current price from the quote.
     private var currentPrice: Double {
-        viewModel.quote?.price ?? 0
+        viewModel.currentQuote?.price ?? 0
     }
 
     /// Estimated total (quantity × execution price).
@@ -178,16 +178,16 @@ struct OrderSheet: View {
 
     private var symbolHeader: some View {
         HStack {
-            Text(String(viewModel.selectedSymbol.prefix(2)))
+            Text(String(viewModel.currentSymbol.prefix(2)))
                 .rouaFont(.calloutBold, color: .rouaTextPrimary)
                 .frame(width: 40, height: 40)
                 .background(Color.rouaSurfaceLight)
                 .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(viewModel.selectedSymbol)
+                Text(viewModel.currentSymbol)
                     .rouaFont(.title3, color: .rouaTextPrimary)
-                if let quote = viewModel.quote {
+                if let quote = viewModel.currentQuote {
                     Text(quote.price.asPrice())
                         .rouaFont(.monoSmall, color: .rouaTextSecondary)
                         .monospacedDigit()
@@ -196,7 +196,7 @@ struct OrderSheet: View {
 
             Spacer()
 
-            if viewModel.isConnected {
+            if viewModel.currentQuote != nil {
                 PulsingDot(status: .active, size: 6)
             }
         }
@@ -646,7 +646,7 @@ struct OrderSheet: View {
                 Text("تم تنفيذ الطلب")  // Order executed
                     .rouaFont(.title3, color: .rouaTextPrimary)
 
-                Text("\(side.displayName) \(quantityText) \(viewModel.selectedSymbol)")
+                Text("\(side.displayName) \(quantityText) \(viewModel.currentSymbol)")
                     .rouaFont(.callout, color: .rouaTextSecondary)
             }
             .padding(RouaSpacing.xxxl)
@@ -665,20 +665,24 @@ struct OrderSheet: View {
     private func placeOrder() {
         guard let credentialId = selectedCredentialId else { return }
 
-        viewModel.placeOrder(
+        let request = OrderRequest(
+            exchangeCredentialId: credentialId,
+            symbol: viewModel.currentSymbol,
             side: side,
             type: orderType,
             quantity: quantity,
             price: orderType == .limit ? price : nil,
             stopLoss: stopLoss,
             takeProfit: takeProfit,
-            credentialId: credentialId
+            idempotencyKey: nil,
+            clientOrderId: nil,
+            signalId: nil
         )
 
-        // Show success overlay when order completes
-        // In production, observe viewModel's order result
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            if !viewModel.isPlacingOrder {
+        Task {
+            await viewModel.placeOrder(request)
+
+            if viewModel.errorMessage == nil {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     showSuccess = true
                 }

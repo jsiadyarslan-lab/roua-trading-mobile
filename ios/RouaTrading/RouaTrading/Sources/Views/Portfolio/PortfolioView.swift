@@ -26,6 +26,21 @@ enum PortfolioTab: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Agent Action (local to view)
+
+/// Represents a pending agent action that requires user confirmation.
+enum AgentAction {
+    case start(strategy: AgentStrategy)
+    case stop
+
+    var message: String {
+        switch self {
+        case .start: return "هل تريد تشغيل وكيل التداول؟"
+        case .stop:  return "هل تريد إيقاف وكيل التداول؟"
+        }
+    }
+}
+
 // MARK: - Portfolio View
 
 struct PortfolioView: View {
@@ -34,6 +49,16 @@ struct PortfolioView: View {
     @State private var selectedTab: PortfolioTab = .balances
     @State private var showAddCredential = false
     @State private var showAgentConfirmation = false
+
+    // Local state previously on inline ViewModel
+    @State private var selectedStrategy: AgentStrategy = .auto
+    @State private var maxPositionSize: Double = 10
+    @State private var maxDailyLoss: Double = 5
+    @State private var maxOpenPositions: Int = 5
+    @State private var maxOpenPositionsDouble: Double = 5
+    @State private var riskPerTrade: Double = 2
+    @State private var agentActionPending: AgentAction?
+    @State private var isAgentToggling = false
 
     var body: some View {
         NavigationStack {
@@ -70,7 +95,7 @@ struct PortfolioView: View {
                 }
             }
             .refreshable {
-                await viewModel.refresh()
+                viewModel.loadAll()
             }
             .overlay {
                 if viewModel.isLoading {
@@ -80,17 +105,17 @@ struct PortfolioView: View {
             .alert(
                 "تأكيد",
                 isPresented: $showAgentConfirmation,
-                presenting: viewModel.agentActionPending
+                presenting: agentActionPending
             ) { action in
                 Button("إلغاء", role: .cancel) {}
                 Button("تأكيد") {
-                    viewModel.confirmAgentAction(action)
+                    confirmAgentAction(action)
                 }
             } message: { action in
                 Text(action.message)
             }
             .sheet(isPresented: $showAddCredential) {
-                AddCredentialSheet(viewModel: viewModel)
+                AddCredentialSheet(isPresented: $showAddCredential)
             }
         }
     }
@@ -130,6 +155,34 @@ struct PortfolioView: View {
                 .fill(Color.rouaSurfaceLight.opacity(0.5))
         )
     }
+
+    // MARK: - Agent Action Handler
+
+    private func confirmAgentAction(_ action: AgentAction) {
+        isAgentToggling = true
+        switch action {
+        case .start(let strategy):
+            let request = AgentStartRequest(
+                strategy: strategy,
+                credentialId: nil,
+                symbols: nil,
+                maxPositionSizePercent: maxPositionSize,
+                maxDailyLossPercent: maxDailyLoss,
+                maxOpenPositions: maxOpenPositions,
+                riskPerTradePercent: riskPerTrade,
+                strategyParams: nil
+            )
+            Task {
+                await viewModel.startAgent(request)
+                isAgentToggling = false
+            }
+        case .stop:
+            Task {
+                await viewModel.stopAgent()
+                isAgentToggling = false
+            }
+        }
+    }
 }
 
 // MARK: - Balances Tab
@@ -151,7 +204,7 @@ extension PortfolioView {
                 } else if viewModel.isLoading {
                     balancesShimmer
                 } else if let error = viewModel.errorMessage {
-                    ErrorBanner(message: error, onRetry: { Task { await viewModel.refresh() } }) {
+                    ErrorBanner(message: error, onRetry: { viewModel.loadAll() }) {
                         viewModel.errorMessage = nil
                     }
                     .padding(.horizontal, RouaSpacing.screenPadding)
@@ -364,13 +417,13 @@ extension PortfolioView {
                         credentialRow(credential)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
-                                    viewModel.deleteCredential(id: credential.id)
+                                    deleteCredential(id: credential.id)
                                 } label: {
                                     Label("حذف", systemImage: "trash")
                                 }
 
                                 Button {
-                                    viewModel.testCredential(id: credential.id)
+                                    testCredential(id: credential.id)
                                 } label: {
                                     Label("اختبار", systemImage: "antenna.radiowaves.left.and.right")
                                 }
@@ -419,6 +472,31 @@ extension PortfolioView {
             }
         }
     }
+
+    // MARK: - Credential Actions via APIClient
+
+    private func deleteCredential(id: String) {
+        withAnimation {
+            viewModel.credentials.removeAll { $0.id == id }
+        }
+        Task {
+            do {
+                let _: Data = try await APIClient.shared.requestRaw(.portfolioDeleteCredential(id: id))
+            } catch {
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func testCredential(id: String) {
+        Task {
+            do {
+                let _: Data = try await APIClient.shared.requestRaw(.portfolioTestConnectivity)
+            } catch {
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
+    }
 }
 
 // MARK: - Agent Tab
@@ -438,12 +516,12 @@ extension PortfolioView {
                 riskParametersSection
 
                 // Open Positions
-                if !viewModel.openPositions.isEmpty {
+                if !viewModel.agentPositions.isEmpty {
                     openPositionsSection
                 }
 
                 // Performance Metrics
-                if viewModel.performanceMetrics != nil {
+                if viewModel.performance != nil {
                     performanceSection
                 }
             }
@@ -476,11 +554,11 @@ extension PortfolioView {
                     viewModel.agentState?.isActive == true ? "إيقاف الوكيل" : "تشغيل الوكيل",
                     variant: viewModel.agentState?.isActive == true ? .danger : .primary,
                     icon: viewModel.agentState?.isActive == true ? "stop.fill" : "play.fill",
-                    isLoading: viewModel.isAgentToggling
+                    isLoading: isAgentToggling
                 ) {
-                    viewModel.agentActionPending = viewModel.agentState?.isActive == true
+                    agentActionPending = viewModel.agentState?.isActive == true
                         ? .stop
-                        : .start(strategy: viewModel.selectedStrategy)
+                        : .start(strategy: selectedStrategy)
                     showAgentConfirmation = true
                 }
             }
@@ -497,39 +575,39 @@ extension PortfolioView {
             ], spacing: RouaSpacing.sm) {
                 ForEach(AgentStrategy.allCases, id: \.self) { strategy in
                     Button {
-                        viewModel.selectedStrategy = strategy
+                        selectedStrategy = strategy
                     } label: {
                         HStack(spacing: RouaSpacing.xs) {
-                            if viewModel.selectedStrategy == strategy {
+                            if selectedStrategy == strategy {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 10, weight: .bold))
                             }
                             Text(strategy.displayName)
-                                .rouaFont(viewModel.selectedStrategy == strategy ? .footnoteBold : .footnote)
+                                .rouaFont(selectedStrategy == strategy ? .footnoteBold : .footnote)
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, RouaSpacing.sm)
                         .background(
                             RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius, style: .continuous)
-                                .fill(viewModel.selectedStrategy == strategy
+                                .fill(selectedStrategy == strategy
                                       ? Color.rouaPrimary.opacity(0.2)
                                       : Color.rouaSurfaceLight)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius, style: .continuous)
-                                .stroke(viewModel.selectedStrategy == strategy
+                                .stroke(selectedStrategy == strategy
                                         ? Color.rouaPrimary
                                         : Color.rouaGlassBorder,
-                                        lineWidth: viewModel.selectedStrategy == strategy ? 1.5 : 0.5)
+                                        lineWidth: selectedStrategy == strategy ? 1.5 : 0.5)
                         )
-                        .foregroundStyle(viewModel.selectedStrategy == strategy
+                        .foregroundStyle(selectedStrategy == strategy
                                          ? .rouaPrimary
                                          : .rouaTextSecondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(strategy.displayName)
-                    .accessibilityAddTraits(viewModel.selectedStrategy == strategy ? .isSelected : [])
+                    .accessibilityAddTraits(selectedStrategy == strategy ? .isSelected : [])
                 }
             }
         }
@@ -543,26 +621,26 @@ extension PortfolioView {
                 VStack(spacing: RouaSpacing.md) {
                     riskParameterRow(
                         label: "أقصى حجم الصفقة",
-                        value: "\(Int(viewModel.maxPositionSize))%",
-                        slider: $viewModel.maxPositionSize,
+                        value: "\(Int(maxPositionSize))%",
+                        slider: $maxPositionSize,
                         range: 1...100
                     )
                     riskParameterRow(
                         label: "أقصى خسارة يومية",
-                        value: "\(Int(viewModel.maxDailyLoss))%",
-                        slider: $viewModel.maxDailyLoss,
+                        value: "\(Int(maxDailyLoss))%",
+                        slider: $maxDailyLoss,
                         range: 1...50
                     )
                     riskParameterRow(
                         label: "أقصى صفقات مفتوحة",
-                        value: "\(viewModel.maxOpenPositions)",
-                        sliderProxy: $viewModel.maxOpenPositionsDouble,
+                        value: "\(maxOpenPositions)",
+                        sliderProxy: $maxOpenPositionsDouble,
                         range: 1...20
                     )
                     riskParameterRow(
                         label: "المخاطرة لكل صفقة",
-                        value: "\(Int(viewModel.riskPerTrade))%",
-                        slider: $viewModel.riskPerTrade,
+                        value: "\(Int(riskPerTrade))%",
+                        slider: $riskPerTrade,
                         range: 1...10
                     )
                 }
@@ -590,9 +668,17 @@ extension PortfolioView {
             if let slider {
                 Slider(value: slider, in: range, step: 1)
                     .tint(.rouaPrimary)
+                    .onChange(of: slider.wrappedValue) { _, newValue in
+                        if sliderProxy != nil {
+                            maxOpenPositions = Int(newValue)
+                        }
+                    }
             } else if let sliderProxy {
                 Slider(value: sliderProxy, in: range, step: 1)
                     .tint(.rouaPrimary)
+                    .onChange(of: sliderProxy.wrappedValue) { _, newValue in
+                        maxOpenPositions = Int(newValue)
+                    }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -603,7 +689,7 @@ extension PortfolioView {
         VStack(spacing: RouaSpacing.sm) {
             SectionHeader(title: "الصفقات المفتوحة")
 
-            ForEach(viewModel.openPositions) { position in
+            ForEach(viewModel.agentPositions) { position in
                 PositionRow(
                     symbol: position.symbol,
                     side: position.isLong ? .long : .short,
@@ -621,7 +707,7 @@ extension PortfolioView {
         VStack(spacing: RouaSpacing.sm) {
             SectionHeader(title: "مقاييس الأداء")
 
-            if let metrics = viewModel.performanceMetrics {
+            if let metrics = viewModel.performance {
                 GlassCard {
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
@@ -651,7 +737,7 @@ extension PortfolioView {
 
 struct AddCredentialSheet: View {
 
-    @ObservedObject var viewModel: PortfolioViewModel
+    @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
 
     @State private var exchange = ""
@@ -660,6 +746,7 @@ struct AddCredentialSheet: View {
     @State private var apiSecret = ""
     @State private var passphrase = ""
     @State private var isTestnet = false
+    @State private var isSubmitting = false
 
     var body: some View {
         NavigationStack {
@@ -778,19 +865,10 @@ struct AddCredentialSheet: View {
                             "إضافة بيانات الاعتماد",
                             variant: .primary,
                             icon: "plus",
-                            isLoading: viewModel.isAddingCredential,
+                            isLoading: isSubmitting,
                             isDisabled: exchange.isEmpty || apiKey.isEmpty || apiSecret.isEmpty
                         ) {
-                            viewModel.addCredential(
-                                exchange: exchange,
-                                label: label.isEmpty ? exchange : label,
-                                apiKey: apiKey,
-                                apiSecret: apiSecret,
-                                passphrase: passphrase.isEmpty ? nil : passphrase,
-                                testnet: isTestnet
-                            ) {
-                                dismiss()
-                            }
+                            addCredential()
                         }
                     }
                     .padding(.horizontal, RouaSpacing.screenPadding)
@@ -804,6 +882,31 @@ struct AddCredentialSheet: View {
                     Button("إلغاء") { dismiss() }
                         .rouaFont(.subheadline, color: .rouaTextSecondary)
                 }
+            }
+        }
+    }
+
+    private func addCredential() {
+        isSubmitting = true
+        let request = CreateCredentialRequest(
+            exchange: exchange,
+            label: label.isEmpty ? exchange : label,
+            apiKey: apiKey,
+            apiSecret: apiSecret,
+            passphrase: passphrase.isEmpty ? nil : passphrase,
+            testnet: isTestnet ? true : nil,
+            keyType: nil
+        )
+        Task {
+            do {
+                let _: Data = try await APIClient.shared.requestRaw(
+                    .portfolioCreateCredential,
+                    body: request
+                )
+                isSubmitting = false
+                dismiss()
+            } catch {
+                isSubmitting = false
             }
         }
     }
@@ -834,108 +937,6 @@ extension AssetBalance {
         let hash = asset.hashValue
         let index = abs(hash) % colors.count
         return colors[index]
-    }
-}
-
-// MARK: - Portfolio View Model
-
-@MainActor
-final class PortfolioViewModel: ObservableObject {
-
-    @Published var balances: Balances?
-    @Published var credentials: [Credential] = []
-    @Published var agentState: AgentState?
-    @Published var openPositions: [Position] = []
-    @Published var performanceMetrics: PerformanceMetrics?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var isAgentToggling = false
-    @Published var isAddingCredential = false
-    @Published var selectedStrategy: AgentStrategy = .auto
-    @Published var maxPositionSize: Double = 10
-    @Published var maxDailyLoss: Double = 5
-    @Published var maxOpenPositions: Int = 5
-    @Published var maxOpenPositionsDouble: Double = 5
-    @Published var riskPerTrade: Double = 2
-    @Published var agentActionPending: AgentAction?
-
-    enum AgentAction {
-        case start(strategy: AgentStrategy)
-        case stop
-
-        var message: String {
-            switch self {
-            case .start: return "هل تريد تشغيل وكيل التداول؟"
-            case .stop:  return "هل تريد إيقاف وكيل التداول؟"
-            }
-        }
-    }
-
-    func refresh() async {
-        isLoading = true
-        // TODO: Call API service
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        isLoading = false
-    }
-
-    func deleteCredential(id: String) {
-        withAnimation {
-            credentials.removeAll { $0.id == id }
-        }
-        // TODO: Call API service
-    }
-
-    func testCredential(id: String) {
-        // TODO: Call API service to test connectivity
-    }
-
-    func addCredential(
-        exchange: String,
-        label: String,
-        apiKey: String,
-        apiSecret: String,
-        passphrase: String?,
-        testnet: Bool,
-        onSuccess: @escaping () -> Void
-    ) {
-        isAddingCredential = true
-        // TODO: Call API service
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.isAddingCredential = false
-            onSuccess()
-        }
-    }
-
-    func confirmAgentAction(_ action: AgentAction) {
-        isAgentToggling = true
-        // TODO: Call API service
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.isAgentToggling = false
-            switch action {
-            case .start:
-                self?.agentState = AgentState(
-                    isActive: true,
-                    strategy: self?.selectedStrategy.rawValue,
-                    startTime: ISO8601DateFormatter().string(from: Date()),
-                    totalTrades: 0,
-                    winRate: 0,
-                    totalPnl: 0,
-                    currentPositions: 0,
-                    settings: nil
-                )
-            case .stop:
-                self?.agentState = AgentState(
-                    isActive: false,
-                    strategy: nil,
-                    startTime: nil,
-                    totalTrades: nil,
-                    winRate: nil,
-                    totalPnl: nil,
-                    currentPositions: nil,
-                    settings: nil
-                )
-            }
-        }
     }
 }
 

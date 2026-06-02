@@ -25,13 +25,13 @@ extension Color {
     /// Loss / sell / negative — vivid red
     static let rouaLoss = Color(hex: "FF1744")
     /// Profit with 15 % opacity — for badges, chips, tags
-    static let rouaProfitLight = Color(hex: "00C853").opacity(0.15)
+    static let rouaProfitLight = Color(hex: "00C853", opacity: 0.15)
     /// Loss with 15 % opacity
-    static let rouaLossLight = Color(hex: "FF1744").opacity(0.15)
+    static let rouaLossLight = Color(hex: "FF1744", opacity: 0.15)
     /// Profit background — 10 % opacity for card fills
-    static let rouaProfitBg = Color(hex: "00C853").opacity(0.1)
+    static let rouaProfitBg = Color(hex: "00C853", opacity: 0.1)
     /// Loss background — 10 % opacity
-    static let rouaLossBg = Color(hex: "FF1744").opacity(0.1)
+    static let rouaLossBg = Color(hex: "FF1744", opacity: 0.1)
 
     // MARK: - Semantic
 
@@ -60,29 +60,29 @@ extension Color {
     // MARK: - Glass
 
     /// Glassmorphism fill — white 5 %
-    static let rouaGlass = Color.white.opacity(0.05)
+    static let rouaGlass = Color(hex: "FFFFFF", opacity: 0.05)
     /// Glassmorphism border — white 10 %
-    static let rouaGlassBorder = Color.white.opacity(0.1)
+    static let rouaGlassBorder = Color(hex: "FFFFFF", opacity: 0.1)
     /// Stronger glass fill — white 8 %
-    static let rouaGlassStrong = Color.white.opacity(0.08)
+    static let rouaGlassStrong = Color(hex: "FFFFFF", opacity: 0.08)
 
     // MARK: - Text
 
     /// Primary text — pure white
     static let rouaTextPrimary = Color.white
     /// Secondary text — white 70 %
-    static let rouaTextSecondary = Color.white.opacity(0.7)
+    static let rouaTextSecondary = Color(hex: "FFFFFF", opacity: 0.7)
     /// Tertiary text — white 40 %
-    static let rouaTextTertiary = Color.white.opacity(0.4)
+    static let rouaTextTertiary = Color(hex: "FFFFFF", opacity: 0.4)
     /// Disabled text — white 20 %
-    static let rouaTextDisabled = Color.white.opacity(0.2)
+    static let rouaTextDisabled = Color(hex: "FFFFFF", opacity: 0.2)
 
     // MARK: - Borders
 
     /// Standard border — white 8 %
-    static let rouaBorder = Color.white.opacity(0.08)
+    static let rouaBorder = Color(hex: "FFFFFF", opacity: 0.08)
     /// Light border — white 5 %
-    static let rouaBorderLight = Color.white.opacity(0.05)
+    static let rouaBorderLight = Color(hex: "FFFFFF", opacity: 0.05)
 
     // MARK: - Gradients
 

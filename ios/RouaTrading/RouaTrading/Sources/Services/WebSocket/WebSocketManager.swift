@@ -171,6 +171,7 @@ final class WebSocketManager: ObservableObject {
 
     deinit {
         throttleTimer?.invalidate()
+        webSocketTask?.cancel(with: .goingAway, reason: "Deallocating".data(using: .utf8))
     }
 
     // MARK: - Connect

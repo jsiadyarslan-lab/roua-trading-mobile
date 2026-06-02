@@ -115,7 +115,7 @@ struct TradingView: View {
         .onAppear {
             viewModel.loadAllData()
         }
-        .onChange(of: viewModel.currentSymbol) { _ in
+        .onChange(of: viewModel.currentSymbol) {
             // Symbol change is handled by switchSymbol()
         }
         .accessibilityElement(children: .contain)

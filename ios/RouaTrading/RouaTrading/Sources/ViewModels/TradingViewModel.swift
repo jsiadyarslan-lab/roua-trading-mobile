@@ -86,7 +86,8 @@ final class TradingViewModel: ObservableObject {
     }
 
     deinit {
-        webSocket.disconnect()
+        // WebSocketManager's own deinit handles cleanup;
+        // calling @MainActor disconnect() from synchronous deinit is invalid.
     }
 
     // MARK: - Load All Data

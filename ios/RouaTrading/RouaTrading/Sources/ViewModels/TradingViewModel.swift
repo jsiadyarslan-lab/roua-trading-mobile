@@ -1,155 +1,352 @@
+// ============================================================================
+// TradingViewModel.swift
+// RouaTrading — Full trading experience ViewModel.
+//
+// Manages chart data, live quotes, positions, trade history, order
+// placement, and position closing. Uses WebSocketManager for real-time
+// price and kline updates.
+// ============================================================================
+
 import Foundation
+import SwiftUI
 
 // MARK: - Trading ViewModel
+
+/// Provides the full trading experience for a single symbol.
+///
+/// Manages:
+/// - Candlestick chart data and timeframe switching
+/// - Real-time quotes via WebSocket
+/// - Open positions and closed trade history
+/// - Order placement and position closing
+///
+/// The ViewModel subscribes to `WebSocketManager` for live price/kline
+/// updates and automatically updates `currentQuote` and `candles` on
+/// each WebSocket callback.
+///
+/// Usage:
+/// ```swift
+/// @StateObject private var tradingVM = TradingViewModel()
+///
+/// .task { await tradingVM.loadAllData() }
+/// .onChange(of: tradingVM.currentSymbol) { _ in /* symbol changed */ }
+/// ```
 @MainActor
-class TradingViewModel: ObservableObject {
-    @Published var symbol = "BTC/USDT"
+final class TradingViewModel: ObservableObject {
+
+    // MARK: - Published State
+
+    /// The currently selected trading symbol (e.g., "BTCUSDT").
+    @Published var currentSymbol: String = "BTCUSDT"
+
+    /// Candlestick data for the chart.
+    @Published var candles: [CandleData] = []
+
+    /// The latest quote for the current symbol.
     @Published var currentQuote: Quote?
+
+    /// Open positions for the authenticated user.
     @Published var positions: [Position] = []
-    @Published var accountOverview: AccountOverview?
-    @Published var orderSide = "BUY"
-    @Published var orderType = "MARKET"
-    @Published var quantity = ""
-    @Published var stopLoss = ""
-    @Published var takeProfit = ""
-    @Published var isPlacingOrder = false
-    @Published var orderSuccess: V2PlaceOrderResponse?
-    @Published var orderError: String?
-    @Published var isLoading = false
+
+    /// Closed trade history.
+    @Published var closedTrades: [Trade] = []
+
+    /// The selected chart timeframe.
+    @Published var selectedTimeframe: CandleInterval = .oneHour
+
+    /// Whether the order sheet is presented.
+    @Published var isOrderSheetPresented: Bool = false
+
+    /// The result of the most recent order execution.
+    @Published var orderResult: OrderExecutionResult?
+
+    /// Whether a loading operation is in progress.
+    @Published var isLoading: Bool = false
+
+    /// The most recent error message, if any.
     @Published var errorMessage: String?
-    @Published var showError = false
-    @Published var historicalCandles: [CandleData] = []
-    @Published var selectedTimeframe = "1h"
 
-    private let api = APIClient.shared
+    // MARK: - Dependencies
 
-    // Computed helpers
-    var portfolioSummary: PortfolioSummary? {
-        guard let acc = accountOverview else { return nil }
-        return PortfolioSummary(
-            totalValue: acc.effectiveTotalValue,
-            totalPnl: (acc.totalRealizedPnl ?? 0) + acc.effectiveUnrealizedPnl,
-            dailyPnl: acc.dailyPnL ?? acc.effectiveUnrealizedPnl,
-            positions: acc.positions,
-            unrealizedPnl: acc.effectiveUnrealizedPnl,
-            realizedPnl: acc.totalRealizedPnl
-        )
+    private let apiClient = APIClient.shared
+    private let cache = CacheManager.shared
+    private let webSocket = WebSocketManager()
+    private let logger = AppLogger.trading
+
+    // MARK: - Initialization
+
+    init() {
+        setupWebSocketCallbacks()
     }
 
-    func loadTradingData() async {
+    deinit {
+        webSocket.disconnect()
+    }
+
+    // MARK: - Load All Data
+
+    /// Loads chart data, quote, positions, and trade history in parallel.
+    func loadAllData() {
+        Task {
+            isLoading = true
+            errorMessage = nil
+
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.loadChartData() }
+                group.addTask { await self.loadQuote() }
+                group.addTask { await self.loadPositions() }
+                group.addTask { await self.loadTradeHistory() }
+            }
+
+            isLoading = false
+            connectWebSocket()
+        }
+    }
+
+    // MARK: - Chart Data
+
+    /// Loads candlestick chart data for the current symbol and timeframe.
+    func loadChartData() async {
+        do {
+            let intervalString = selectedTimeframe.rawValue
+            let history: [CandleData] = try await cache.valueOrFetch(
+                forKey: CacheKeys.exchangeHistory(symbol: currentSymbol, interval: intervalString),
+                ttl: AppConfig.marketDataCacheTimeout
+            ) {
+                try await self.apiClient.request(
+                    .exchangeHistory(symbol: self.currentSymbol, interval: intervalString, limit: 500)
+                )
+            }
+            self.candles = history
+        } catch {
+            logger.error("Failed to load chart data: \(error.localizedDescription)")
+            errorMessage = "Failed to load chart data."
+        }
+    }
+
+    // MARK: - Quote
+
+    /// Loads the latest quote for the current symbol.
+    func loadQuote() async {
+        do {
+            let quote: Quote = try await cache.valueOrFetch(
+                forKey: CacheKeys.exchangeQuote(symbol: currentSymbol),
+                ttl: AppConfig.marketDataCacheTimeout
+            ) {
+                try await self.apiClient.request(.exchangeQuote(symbol: self.currentSymbol))
+            }
+            self.currentQuote = quote
+        } catch {
+            logger.error("Failed to load quote: \(error.localizedDescription)")
+            errorMessage = "Failed to load quote."
+        }
+    }
+
+    // MARK: - Positions
+
+    /// Loads open positions via the Trading V2 API.
+    func loadPositions() async {
+        do {
+            let positions: [Position] = try await apiClient.request(.tradingV2Positions)
+            self.positions = positions
+        } catch {
+            logger.error("Failed to load positions: \(error.localizedDescription)")
+            // Positions may be empty — not critical enough to show as error
+        }
+    }
+
+    // MARK: - Trade History
+
+    /// Loads closed trade history.
+    func loadTradeHistory() async {
+        do {
+            let history: TradeHistory = try await apiClient.request(.tradingHistory)
+            self.closedTrades = history.trades
+        } catch {
+            logger.error("Failed to load trade history: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Order Placement
+
+    /// Places a new order via the Trading V2 API.
+    ///
+    /// On success, `orderResult` is updated and the positions list is
+    /// refreshed automatically.
+    ///
+    /// - Parameter request: The order request payload.
+    func placeOrder(_ request: OrderRequest) async {
         isLoading = true
         errorMessage = nil
 
-        // Load public market data first (no auth needed)
-        async let quoteTask: () = loadQuote()
-        async let candlesTask: () = loadHistoricalCandles()
-
-        await quoteTask
-        await candlesTask
-
-        // Then try authenticated endpoints
-        await loadAccountData()
-
-        self.isLoading = false
-    }
-
-    // URL-encode symbol for path segments (BTC/USDT → BTC%2FUSDT)
-    private var encodedSymbol: String {
-        symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? symbol
-    }
-
-    // Convert UI timeframe to API interval
-    // UI: "1m", "5m", "15m", "1h", "4h", "1D", "1W"
-    // Backend CCXT: "1m", "5m", "15m", "1h", "4h", "1d", "1w", "1day"
-    private var apiInterval: String {
-        let tf = selectedTimeframe.lowercased()
-        // CCXT uses "1d" not "1D", "1w" not "1W"
-        return tf
-    }
-
-    func loadQuote() async {
         do {
-            let quoteResponse: QuoteResponse = try await api.request("/exchange/quote/\(encodedSymbol)")
-            self.currentQuote = quoteResponse.data
-            print("[Trading] Quote loaded: \(symbol) = \(currentQuote?.lastPrice ?? 0)")
+            let result: OrderExecutionResult = try await apiClient.request(
+                .tradingV2CreateOrder,
+                body: request
+            )
+            self.orderResult = result
+            logger.info("Order placed: \(result.orderId) — status: \(result.status.rawValue)")
+
+            // Refresh positions after placing an order
+            await loadPositions()
         } catch {
-            print("[Trading] Quote load error: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            logger.error("Failed to place order: \(error.localizedDescription)")
         }
+
+        isLoading = false
     }
 
-    func loadAccountData() async {
-        guard APIClient.shared.sessionToken != nil else {
-            print("[Trading] No session token — skipping account data")
-            return
-        }
+    // MARK: - Close Position
 
-        // Use v2 endpoints (v1 /trading/positions is broken — 503 due to briefId)
-        do {
-            let positions: [Position] = try await api.request("/trading/v2/positions")
-            self.positions = positions
-            print("[Trading] ✅ Loaded \(positions.count) positions")
-        } catch {
-            print("[Trading] Positions unavailable: \(error.localizedDescription)")
-        }
+    /// Closes an open position by its ID.
+    ///
+    /// - Parameter id: The position identifier.
+    func closePosition(id: String) async {
+        isLoading = true
+        errorMessage = nil
 
         do {
-            let account: AccountOverview = try await api.request("/trading/v2/portfolio")
-            self.accountOverview = account
-            print("[Trading] ✅ Portfolio loaded")
+            let request = ClosePositionRequest(positionId: id, quantity: nil)
+            let _: Data = try await apiClient.requestRaw(.tradingClosePosition, body: request)
+            logger.info("Position closed: \(id)")
+
+            // Refresh positions after closing
+            await loadPositions()
         } catch {
-            print("[Trading] Account data unavailable: \(error.localizedDescription)")
+            errorMessage = error.localizedDescription
+            logger.error("Failed to close position: \(error.localizedDescription)")
+        }
+
+        isLoading = false
+    }
+
+    // MARK: - Symbol Switching
+
+    /// Switches the active trading symbol.
+    ///
+    /// Disconnects the current WebSocket subscription, updates the symbol,
+    /// reloads chart data and quote, and reconnects the WebSocket.
+    ///
+    /// - Parameter symbol: The new trading symbol (e.g., "ETHUSDT").
+    func switchSymbol(_ symbol: String) {
+        let newSymbol = symbol.uppercased()
+        guard newSymbol != currentSymbol else { return }
+
+        currentSymbol = newSymbol
+        candles = []
+        currentQuote = nil
+        orderResult = nil
+        errorMessage = nil
+
+        // Reload data for the new symbol
+        Task {
+            isLoading = true
+            await loadChartData()
+            await loadQuote()
+            isLoading = false
+        }
+
+        connectWebSocket()
+    }
+
+    // MARK: - Timeframe Switching
+
+    /// Switches the chart timeframe and reloads candle data.
+    ///
+    /// - Parameter interval: The new candle interval.
+    func switchTimeframe(_ interval: CandleInterval) {
+        guard interval != selectedTimeframe else { return }
+
+        selectedTimeframe = interval
+        candles = []
+        errorMessage = nil
+
+        Task {
+            await loadChartData()
+        }
+
+        // Reconnect WebSocket with new interval
+        connectWebSocket()
+    }
+
+    // MARK: - WebSocket Management
+
+    /// Connects the WebSocket for live price and kline updates.
+    private func connectWebSocket() {
+        let symbol = currentSymbol.lowercased()
+        let interval = selectedTimeframe.rawValue
+        webSocket.connect(symbols: [symbol], intervals: [interval])
+    }
+
+    /// Sets up WebSocket callbacks for real-time data updates.
+    private func setupWebSocketCallbacks() {
+        webSocket.onKlineUpdate = { [weak self] kline in
+            guard let self else { return }
+            self.handleKlineUpdate(kline)
+        }
+
+        webSocket.onTickerUpdate = { [weak self] ticker in
+            guard let self else { return }
+            self.handleTickerUpdate(ticker)
         }
     }
 
-    func loadHistoricalCandles() async {
-        do {
-            let response: CandleHistoryResponse = try await api.request("/exchange/history/\(encodedSymbol)?interval=\(apiInterval)&limit=500")
-            let candles = response.data ?? []
-            print("[Trading] Loaded \(candles.count) historical candles for \(symbol) @ \(apiInterval)")
-            self.historicalCandles = candles
-        } catch {
-            print("[Trading] Failed to load historical candles: \(error.localizedDescription)")
-        }
-    }
+    /// Processes a kline update from the WebSocket.
+    ///
+    /// If the kline is for a closed candle, it is appended to the chart.
+    /// If it's for the current (open) candle, the last candle is updated.
+    private func handleKlineUpdate(_ kline: BinanceKline) {
+        guard kline.symbol.uppercased() == currentSymbol else { return }
 
-    func placeOrder(credentialId: String) async {
-        guard let qty = Double(quantity), qty > 0 else {
-            orderError = "الكمية غير صالحة"
-            return
-        }
-
-        isPlacingOrder = true
-        orderError = nil
-
-        let request = PlaceOrderRequest(
-            exchangeCredentialId: credentialId,
-            symbol: symbol,
-            side: orderSide,
-            type: orderType,
-            quantity: qty,
-            price: nil,
-            stopLoss: Double(stopLoss),
-            takeProfit: Double(takeProfit),
-            idempotencyKey: UUID().uuidString,
-            clientOrderId: nil
+        let updatedCandle = CandleData(
+            time: Int(kline.openTime / 1000),
+            open: Double(kline.open) ?? 0,
+            high: Double(kline.high) ?? 0,
+            low: Double(kline.low) ?? 0,
+            close: Double(kline.close) ?? 0,
+            volume: Double(kline.volume) ?? 0
         )
 
-        do {
-            let response: V2PlaceOrderResponse = try await api.request("/trading/v2/orders", method: "POST", body: request)
-            self.orderSuccess = response
-            self.isPlacingOrder = false
-            self.quantity = ""
-            self.stopLoss = ""
-            self.takeProfit = ""
-            await loadTradingData()
-        } catch {
-            self.orderError = "فشل تقديم الطلب: \(error.localizedDescription)"
-            self.isPlacingOrder = false
-            print("[Trading] Order error: \(error)")
+        if kline.isClosed {
+            // Closed candle — append to chart if not already present
+            if candles.last?.time != updatedCandle.time {
+                candles.append(updatedCandle)
+            } else if let lastIndex = candles.indices.last {
+                candles[lastIndex] = updatedCandle
+            }
+        } else {
+            // Open (current) candle — update the last entry
+            if let lastIndex = candles.indices.last,
+               candles[lastIndex].time == updatedCandle.time {
+                candles[lastIndex] = updatedCandle
+            } else {
+                candles.append(updatedCandle)
+            }
         }
     }
 
-    func retry() async {
-        await loadTradingData()
+    /// Processes a ticker update from the WebSocket.
+    ///
+    /// Updates `currentQuote` with the latest price and change data.
+    private func handleTickerUpdate(_ ticker: BinanceTicker) {
+        guard ticker.symbol.uppercased() == currentSymbol else { return }
+
+        let quote = Quote(
+            symbol: ticker.symbol.uppercased(),
+            price: Double(ticker.lastPrice) ?? (currentQuote?.price ?? 0),
+            change: Double(ticker.priceChange) ?? 0,
+            changePct: Double(ticker.priceChangePercent) ?? 0,
+            high: Double(ticker.high) ?? 0,
+            low: Double(ticker.low) ?? 0,
+            open: Double(ticker.open) ?? 0,
+            volume: Double(ticker.volume) ?? 0,
+            bid: nil,
+            ask: nil,
+            timestamp: String(ticker.eventTime),
+            source: "binance_ws"
+        )
+
+        self.currentQuote = quote
     }
 }

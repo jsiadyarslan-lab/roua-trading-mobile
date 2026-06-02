@@ -1,130 +1,700 @@
+// =============================================================================
+// SettingsView.swift — Roua Trading · Settings
+// =============================================================================
+// Profile, Security, Notifications, Trading, and About sections.
+// Uses RouaColors, RouaTypography, RouaSpacing, and RouaComponents.
+// Supports RTL layout, accessibility, and smooth animations.
+// =============================================================================
+
 import SwiftUI
 
-struct SettingsView: View {
-    @ObservedObject private var authService = AuthService.shared
-    @AppStorage("appLanguage") private var appLanguage = "ar"
-    @State private var biometricEnabled = true
-    @State private var pushEnabled = true
-    @State private var showLogout = false
+// MARK: - Settings View
 
-    private let languages = [
-        ("ar", "العربية", "🇸🇦"),
-        ("en", "English", "🇬🇧"),
-        ("fr", "Français", "🇫🇷"),
-        ("tr", "Türkçe", "🇹🇷"),
-        ("es", "Español", "🇪🇸"),
-        ("de", "Deutsch", "🇩🇪"),
-    ]
+struct SettingsView: View {
+
+    @StateObject private var viewModel = SettingsViewModel()
+    @State private var showSignOutConfirmation = false
+    @State private var showSignOutAllConfirmation = false
+    @State private var showChangePasskey = false
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: RouaTheme.Spacing.lg) {
-                Text("الإعدادات")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(RouaTheme.Colors.textPrimary)
+        NavigationStack {
+            ZStack {
+                Color.rouaBackground.ignoresSafeArea()
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: RouaSpacing.xxl) {
+                        // Profile Section
+                        profileSection
+
+                        // Security Section
+                        securitySection
+
+                        // Notifications Section
+                        notificationsSection
+
+                        // Trading Section
+                        tradingSection
+
+                        // About Section
+                        aboutSection
+
+                        // Logout
+                        logoutButton
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                    .padding(.vertical, RouaSpacing.lg)
+                    // Bottom safe area for tab bar
+                    .padding(.bottom, RouaSpacing.tabBarHeight + RouaSpacing.lg)
+                }
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("الإعدادات")
+                        .rouaFont(.headline, color: .rouaTextPrimary)
+                }
+            }
+            .alert("تسجيل الخروج", isPresented: $showSignOutConfirmation) {
+                Button("إلغاء", role: .cancel) {}
+                Button("تسجيل الخروج", role: .destructive) {
+                    viewModel.signOut()
+                }
+            } message: {
+                Text("هل أنت متأكد من تسجيل الخروج؟")
+            }
+            .alert("تسجيل الخروج من جميع الأجهزة", isPresented: $showSignOutAllConfirmation) {
+                Button("إلغاء", role: .cancel) {}
+                Button("تسجيل الخروج", role: .destructive) {
+                    viewModel.signOutAllDevices()
+                }
+            } message: {
+                Text("سيتم تسجيل الخروج من جميع الأجهزة والأجهزة الأخرى. هل أنت متأكد؟")
+            }
+        }
+    }
+}
+
+// MARK: - Profile Section
+
+extension SettingsView {
+
+    private var profileSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: "الملف الشخصي")
+
+            GlassCard {
+                HStack(spacing: RouaSpacing.md) {
+                    // Avatar
+                    AvatarView(
+                        imageURL: viewModel.user?.avatarUrl,
+                        initials: viewModel.user?.initials ?? "؟",
+                        size: .large
+                    )
+
+                    // Info
+                    VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                        Text(viewModel.user?.displayName ?? "مستخدم")
+                            .rouaFont(.headline, color: .rouaTextPrimary)
+                            .lineLimit(1)
+
+                        Text(viewModel.user?.email ?? "")
+                            .rouaFont(.footnote, color: .rouaTextSecondary)
+                            .lineLimit(1)
+
+                        // Tier badge
+                        tierBadge
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Profile Card
-                GlassCard {
-                    HStack(spacing: RouaTheme.Spacing.lg) {
-                        ZStack {
-                            Circle().fill(RouaTheme.Colors.accentGradient).frame(width: 56, height: 56)
-                            Image(systemName: "person.fill").font(.system(size: 24)).foregroundStyle(.white)
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(authService.currentUser?.displayName ?? "زائر").font(.system(size: 16, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                            Text(authService.currentUser?.email ?? "لم يتم تسجيل الدخول").font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.textSecondary)
-                            if let tier = authService.currentUser?.tier {
-                                Text(tier).font(.system(size: 10, weight: .medium)).foregroundStyle(RouaTheme.Colors.accent).padding(.horizontal, 6).padding(.vertical, 2).background(RouaTheme.Colors.accent.opacity(0.1)).clipShape(Capsule())
-                            }
-                        }
+                    // Edit button
+                    Button {
+                        // TODO: Navigate to edit profile
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: RouaSpacing.iconMedium))
+                            .foregroundStyle(.rouaPrimary)
+                            .frame(width: 36, height: 36)
+                            .background(Color.rouaPrimary.opacity(0.15))
+                            .clipShape(Circle())
                     }
+                    .accessibilityLabel("تعديل الملف الشخصي")
                 }
+            }
+        }
+    }
 
-                // Auth Status Card
-                GlassCard {
-                    VStack(spacing: RouaTheme.Spacing.md) {
-                        HStack {
-                            Circle()
-                                .fill(authService.isAuthenticated ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
-                                .frame(width: 10, height: 10)
-                            Text(authService.isAuthenticated ? "متصل بالحساب" : "غير متصل — تسجيل الدخول مطلوب")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(authService.isAuthenticated ? RouaTheme.Colors.profit : RouaTheme.Colors.loss)
-                            Spacer()
-                        }
-                        if let token = APIClient.shared.sessionToken {
-                            Text("Token: \(token.prefix(12))...")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(RouaTheme.Colors.textTertiary)
-                        } else {
-                            Text("لا يوجد رمز جلسة")
-                                .font(.system(size: 12))
-                                .foregroundStyle(RouaTheme.Colors.textTertiary)
-                        }
+    @ViewBuilder
+    private var tierBadge: some View {
+        let tier = viewModel.user?.tier ?? .free
+        Badge(
+            text: tier.displayName,
+            variant: tier == .institutional ? .warning : tier == .pro ? .info : .neutral
+        )
+    }
+}
+
+// MARK: - Security Section
+
+extension SettingsView {
+
+    private var securitySection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: "الأمان")
+
+            // Active Sessions
+            GlassCard {
+                VStack(alignment: .leading, spacing: RouaSpacing.md) {
+                    HStack {
+                        Text("الجلسات النشطة")
+                            .rouaFont(.calloutBold, color: .rouaTextPrimary)
+                        Spacer()
+                        Text("\(viewModel.sessions.count)")
+                            .rouaFont(.calloutBold, color: .rouaPrimary)
                     }
-                }
 
-                // Language Selector
-                GlassCard {
-                    VStack(alignment: .leading, spacing: RouaTheme.Spacing.md) {
-                        Text("اللغة").font(.system(size: 14, weight: .semibold)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                            ForEach(languages, id: \.0) { lang in
-                                Button {
-                                    appLanguage = lang.0
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Text(lang.2).font(.system(size: 16))
-                                        Text(lang.1).font(.system(size: 11, weight: appLanguage == lang.0 ? .bold : .medium))
-                                    }
-                                    .foregroundStyle(appLanguage == lang.0 ? .white : RouaTheme.Colors.textSecondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                                    .background(appLanguage == lang.0 ? RouaTheme.Colors.accent : RouaTheme.Colors.surfaceElevated)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                }
-                            }
+                    if viewModel.sessions.isEmpty {
+                        Text("لا توجد جلسات نشطة")
+                            .rouaFont(.footnote, color: .rouaTextTertiary)
+                    } else {
+                        ForEach(viewModel.sessions) { session in
+                            sessionRow(session)
                         }
                     }
-                }
 
-                // Settings Toggles
-                GlassCard {
-                    VStack(spacing: RouaTheme.Spacing.md) {
-                        Toggle(isOn: $biometricEnabled) {
-                            Text("الفتح البيومتري").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                        }.tint(RouaTheme.Colors.accent)
-                        Toggle(isOn: $pushEnabled) {
-                            Text("الإشعارات").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                        }.tint(RouaTheme.Colors.accent)
-                    }
-                }
-
-                // App Info
-                GlassCard {
-                    VStack(spacing: RouaTheme.Spacing.sm) {
-                        HStack { Text("الإصدار").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("3.0.0").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
-                        HStack { Text("البناء").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text("Phase 3").font(.system(size: 14, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textPrimary) }
-                        HStack { Text("API").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary); Spacer(); Text(APIConfig.baseURL).font(.system(size: 10, design: .monospaced)).foregroundStyle(RouaTheme.Colors.textTertiary).lineLimit(1) }
-                    }
-                }
-
-                if authService.isAuthenticated {
-                    TradingButton(title: "تسجيل الخروج", style: .danger, isLoading: false) { showLogout = true }
-                        .alert("تسجيل الخروج", isPresented: $showLogout) {
-                            Button("تسجيل الخروج", role: .destructive) { Task { await authService.logout() } }
-                            Button("إلغاء", role: .cancel) {}
-                        } message: { Text("هل أنت متأكد من تسجيل الخروج؟") }
-                } else {
-                    TradingButton(title: "تسجيل الدخول", style: .primary, isLoading: authService.isLoading) {
-                        Task { await authService.signInWithGoogle() }
+                    // Sign out all devices
+                    RouaButton(
+                        "تسجيل الخروج من جميع الأجهزة",
+                        variant: .secondary,
+                        size: .small,
+                        icon: "rectangle.portrait.and.arrow.right"
+                    ) {
+                        showSignOutAllConfirmation = true
                     }
                 }
             }
-            .padding(RouaTheme.Spacing.lg)
+
+            // Biometric & Passkey
+            GlassCard {
+                VStack(spacing: 0) {
+                    // Biometric auth toggle
+                    settingsToggleRow(
+                        icon: viewModel.biometricIcon,
+                        iconColor: .rouaProfit,
+                        title: "المصادقة البيومترية",
+                        subtitle: viewModel.biometricLabel,
+                        isOn: $viewModel.biometricEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Change passkey
+                    Button {
+                        showChangePasskey = true
+                    } label: {
+                        HStack(spacing: RouaSpacing.md) {
+                            Image(systemName: "key.fill")
+                                .font(.system(size: RouaSpacing.iconMedium))
+                                .foregroundStyle(.rouaAccent)
+                                .frame(width: 32, height: 32)
+                                .background(Color.rouaAccent.opacity(0.15))
+                                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+                            Text("تغيير مفتاح المرور")
+                                .rouaFont(.subheadline, color: .rouaTextPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.rouaTextTertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("تغيير مفتاح المرور")
+                }
+            }
         }
-        .background(RouaTheme.Colors.background)
-        .navigationTitle("الإعدادات")
     }
+
+    private func sessionRow(_ session: AuthSession) -> some View {
+        HStack(spacing: RouaSpacing.md) {
+            // Device icon
+            Image(systemName: session.isMobile ? "iphone" : "desktopcomputer")
+                .font(.system(size: RouaSpacing.iconMedium))
+                .foregroundStyle(.rouaTextSecondary)
+                .frame(width: 32, height: 32)
+                .background(Color.rouaSurfaceLight)
+                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+            // Info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.deviceLabel)
+                    .rouaFont(.footnoteBold, color: .rouaTextPrimary)
+                    .lineLimit(1)
+
+                HStack(spacing: RouaSpacing.sm) {
+                    if let ip = session.ipAddress {
+                        Text(ip)
+                            .rouaFont(.micro, color: .rouaTextTertiary)
+                    }
+                    Text(session.lastActive)
+                        .rouaFont(.micro, color: .rouaTextTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Revoke button
+            Button {
+                withAnimation {
+                    viewModel.revokeSession(id: session.id)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(.rouaLoss)
+            }
+            .accessibilityLabel("إلغاء الجلسة")
+        }
+        .padding(.vertical, RouaSpacing.xs)
+    }
+}
+
+// MARK: - Notifications Section
+
+extension SettingsView {
+
+    private var notificationsSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: "الإشعارات")
+
+            GlassCard {
+                VStack(spacing: 0) {
+                    // Push notifications
+                    settingsToggleRow(
+                        icon: "bell.fill",
+                        iconColor: .rouaPrimary,
+                        title: "الإشعارات الفورية",
+                        isOn: $viewModel.pushNotificationsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Signal alerts
+                    settingsToggleRow(
+                        icon: "antenna.radiowaves.left.and.right",
+                        iconColor: .rouaInfo,
+                        title: "تنبيهات الإشارات",
+                        isOn: $viewModel.signalAlertsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Trade alerts
+                    settingsToggleRow(
+                        icon: "arrow.left.arrow.right",
+                        iconColor: .rouaProfit,
+                        title: "تنبيهات الصفقات",
+                        isOn: $viewModel.tradeAlertsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // AI alerts
+                    settingsToggleRow(
+                        icon: "brain",
+                        iconColor: .rouaSecondary,
+                        title: "تنبيهات الذكاء الاصطناعي",
+                        isOn: $viewModel.aiAlertsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Scanner alerts
+                    settingsToggleRow(
+                        icon: "magnifyingglass",
+                        iconColor: .rouaAccent,
+                        title: "تنبيهات الماسح",
+                        isOn: $viewModel.scannerAlertsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Risk alerts
+                    settingsToggleRow(
+                        icon: "exclamationmark.triangle.fill",
+                        iconColor: .rouaWarning,
+                        title: "تنبيهات المخاطر",
+                        isOn: $viewModel.riskAlertsEnabled
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Auto-execute signals
+                    settingsToggleRow(
+                        icon: "bolt.fill",
+                        iconColor: .rouaProfit,
+                        title: "تنفيذ الإشارات تلقائيًا",
+                        subtitle: "تنفيذ الصفقات تلقائيًا عند تلقي إشارات",
+                        isOn: $viewModel.autoExecuteEnabled
+                    )
+
+                    if viewModel.autoExecuteEnabled {
+                        Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                        // Min confidence slider
+                        VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                            HStack {
+                                Text("الحد الأدنى للثقة")
+                                    .rouaFont(.footnote, color: .rouaTextSecondary)
+                                Spacer()
+                                Text("\(viewModel.minConfidence)%")
+                                    .rouaFont(.footnoteBold, color: .rouaPrimary)
+                                    .monospacedDigit()
+                            }
+
+                            Slider(value: $viewModel.minConfidence, in: 50...100, step: 5)
+                                .tint(.rouaPrimary)
+                        }
+                        .padding(.horizontal, RouaSpacing.md)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Trading Section
+
+extension SettingsView {
+
+    private var tradingSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: "التداول")
+
+            GlassCard {
+                VStack(spacing: 0) {
+                    // Default exchange credential
+                    settingsNavigationRow(
+                        icon: "building.columns",
+                        iconColor: .rouaPrimary,
+                        title: "بيانات الاعتماد الافتراضية",
+                        value: viewModel.defaultCredentialLabel
+                    ) {
+                        // TODO: Show credential picker
+                    }
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Default order type
+                    settingsNavigationRow(
+                        icon: "doc.text",
+                        iconColor: .rouaAccent,
+                        title: "نوع الأمر الافتراضي",
+                        value: viewModel.defaultOrderType.displayName
+                    ) {
+                        // TODO: Show order type picker
+                    }
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Confirm before trading
+                    settingsToggleRow(
+                        icon: "checkmark.shield",
+                        iconColor: .rouaProfit,
+                        title: "تأكيد قبل التداول",
+                        isOn: $viewModel.confirmBeforeTrading
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Risk limits
+                    settingsNavigationRow(
+                        icon: "shield.lefthalf.filled",
+                        iconColor: .rouaWarning,
+                        title: "حدود المخاطر",
+                        value: viewModel.riskLimitsSummary
+                    ) {
+                        // TODO: Show risk limits detail
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - About Section
+
+extension SettingsView {
+
+    private var aboutSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: "حول")
+
+            GlassCard {
+                VStack(spacing: 0) {
+                    // App version
+                    settingsInfoRow(
+                        icon: "info.circle",
+                        iconColor: .rouaNeutral,
+                        title: "إصدار التطبيق",
+                        value: viewModel.appVersion
+                    )
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Terms of Service
+                    settingsLinkRow(
+                        icon: "doc.text",
+                        iconColor: .rouaPrimary,
+                        title: "شروط الخدمة"
+                    ) {
+                        // TODO: Open terms URL
+                    }
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Privacy Policy
+                    settingsLinkRow(
+                        icon: "hand.raised",
+                        iconColor: .rouaAccent,
+                        title: "سياسة الخصوصية"
+                    ) {
+                        // TODO: Open privacy URL
+                    }
+
+                    Divider().background(Color.rouaGlassBorder).padding(.vertical, RouaSpacing.sm)
+
+                    // Support
+                    settingsLinkRow(
+                        icon: "questionmark.circle",
+                        iconColor: .rouaProfit,
+                        title: "الدعم والاتصال"
+                    ) {
+                        // TODO: Open support
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Logout Button
+
+extension SettingsView {
+
+    private var logoutButton: some View {
+        RouaButton(
+            "تسجيل الخروج",
+            variant: .danger,
+            size: .large,
+            icon: "rectangle.portrait.and.arrow.right"
+        ) {
+            showSignOutConfirmation = true
+        }
+    }
+}
+
+// MARK: - Shared Row Components
+
+extension SettingsView {
+
+    private func settingsToggleRow(
+        icon: String,
+        iconColor: Color = .rouaPrimary,
+        title: String,
+        subtitle: String? = nil,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: RouaSpacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: RouaSpacing.iconMedium))
+                .foregroundStyle(iconColor)
+                .frame(width: 32, height: 32)
+                .background(iconColor.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .rouaFont(.subheadline, color: .rouaTextPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .rouaFont(.caption, color: .rouaTextTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Toggle("", isOn: isOn)
+                .tint(.rouaPrimary)
+                .labelsHidden()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(isOn.wrappedValue ? "مفعّل" : "معطّل")")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func settingsNavigationRow(
+        icon: String,
+        iconColor: Color = .rouaPrimary,
+        title: String,
+        value: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: RouaSpacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 32, height: 32)
+                    .background(iconColor.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .rouaFont(.subheadline, color: .rouaTextPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(value)
+                        .rouaFont(.caption, color: .rouaTextTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.rouaTextTertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title): \(value)")
+    }
+
+    private func settingsInfoRow(
+        icon: String,
+        iconColor: Color = .rouaPrimary,
+        title: String,
+        value: String
+    ) -> some View {
+        HStack(spacing: RouaSpacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: RouaSpacing.iconMedium))
+                .foregroundStyle(iconColor)
+                .frame(width: 32, height: 32)
+                .background(iconColor.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+            Text(title)
+                .rouaFont(.subheadline, color: .rouaTextPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(value)
+                .rouaFont(.footnote, color: .rouaTextTertiary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): \(value)")
+    }
+
+    private func settingsLinkRow(
+        icon: String,
+        iconColor: Color = .rouaPrimary,
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: RouaSpacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 32, height: 32)
+                    .background(iconColor.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+                Text(title)
+                    .rouaFont(.subheadline, color: .rouaPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "arrow.up.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.rouaTextTertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+// MARK: - Settings View Model
+
+@MainActor
+final class SettingsViewModel: ObservableObject {
+
+    // User
+    @Published var user: User?
+
+    // Security
+    @Published var sessions: [AuthSession] = []
+    @Published var biometricEnabled = true
+
+    // Notifications
+    @Published var pushNotificationsEnabled = true
+    @Published var signalAlertsEnabled = true
+    @Published var tradeAlertsEnabled = true
+    @Published var aiAlertsEnabled = true
+    @Published var scannerAlertsEnabled = true
+    @Published var riskAlertsEnabled = true
+    @Published var autoExecuteEnabled = false
+    @Published var minConfidence: Double = 75
+
+    // Trading
+    @Published var defaultCredentialId: String?
+    @Published var defaultOrderType: OrderType = .market
+    @Published var confirmBeforeTrading = true
+
+    // Computed
+    var biometricLabel: String {
+        // Check device capability in production
+        "Face ID"
+    }
+
+    var biometricIcon: String {
+        "faceid"
+    }
+
+    var defaultCredentialLabel: String {
+        // Look up credential display label
+        defaultCredentialId != nil ? "محدد" : "غير محدد"
+    }
+
+    var riskLimitsSummary: String {
+        "10% حجم • 5% خسارة يومية"
+    }
+
+    var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
+    }
+
+    func revokeSession(id: String) {
+        sessions.removeAll { $0.id == id }
+        // TODO: Call API service
+    }
+
+    func signOut() {
+        // TODO: Clear session, navigate to auth
+    }
+
+    func signOutAllDevices() {
+        sessions.removeAll()
+        // TODO: Call API service, then sign out
+    }
+}
+
+// MARK: - Preview
+
+#Preview("Settings") {
+    SettingsView()
 }

@@ -1,25 +1,21 @@
+// =============================================================================
+// App.swift — Roua Trading · Application Entry Point
+// =============================================================================
+// Root application definition. Injects AuthViewModel into the environment,
+// enforces dark color scheme, and presents RootView as the initial scene.
+// =============================================================================
+
 import SwiftUI
 
-// MARK: - APP ENTRY
 @main
 struct RouaTradingApp: App {
-    @StateObject private var authService = AuthService.shared
-    @AppStorage("appLanguage") private var appLanguage = "ar"
+    @StateObject private var authViewModel = AuthViewModel()
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if authService.isAuthenticated {
-                    TabBarView()
-                } else {
-                    AuthView()
-                }
-            }
-            .tint(RouaTheme.Colors.accent)
-            .preferredColorScheme(.dark)
-            .environment(\.layoutDirection, appLanguage == "ar" ? .rightToLeft : .leftToRight)
-            .environment(\.locale, Locale(identifier: appLanguage))
-            .onAppear { authService.checkExistingSession() }
+            RootView()
+                .environmentObject(authViewModel)
+                .preferredColorScheme(.dark)
         }
     }
 }

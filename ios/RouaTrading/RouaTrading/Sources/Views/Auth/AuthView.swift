@@ -1,69 +1,365 @@
+// =============================================================================
+// AuthView.swift — Roua Trading · Authentication Screen
+// =============================================================================
+// Beautiful dark glassmorphism auth screen with:
+//   • Gradient "ROUA" brand logo
+//   • Arabic subtitle
+//   • Google OAuth sign-in (primary)
+//   • Passkey sign-in with email field (secondary)
+//   • Create account (ghost)
+//   • Loading shimmer states
+//   • Error banner
+//   • Animated fade-in for elements
+//   • Terms footer
+// =============================================================================
+
 import SwiftUI
-import AuthenticationServices
 
 struct AuthView: View {
-    @ObservedObject private var authService = AuthService.shared
+
+    @EnvironmentObject private var authViewModel: AuthViewModel
+
+    // MARK: - State
+
+    @State private var showContent = false
+    @State private var showEmailField = false
     @State private var email = ""
-    @State private var showRegistration = false
+    @State private var brandingOffset: CGFloat = 30
+
+    @FocusState private var isEmailFocused: Bool
+
+    // MARK: - Body
 
     var body: some View {
         ZStack {
-            RouaTheme.Colors.background.ignoresSafeArea()
-            Circle().fill(RouaTheme.Colors.accent.opacity(0.05)).frame(width: 400, height: 400).blur(radius: 80).offset(x: -100, y: -200)
+            // ── Background ──
+            backgroundLayer
 
-            VStack(spacing: RouaTheme.Spacing.xxl) {
-                Spacer()
+            // ── Content ──
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: RouaSpacing.xxl) {
+                    Spacer(minLength: 0)
 
-                // Logo
-                VStack(spacing: RouaTheme.Spacing.lg) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.xl).fill(RouaTheme.Colors.accentGradient).frame(width: 80, height: 80)
-                        Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 36, weight: .bold)).foregroundStyle(.white)
-                    }
-                    Text("ROUA TRADING").font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(RouaTheme.Colors.textPrimary).tracking(4)
-                    Text("منصة تداول مدعومة بالذكاء الاصطناعي").font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textSecondary)
+                    // Brand
+                    brandingSection
+                        .opacity(showContent ? 1 : 0)
+                        .offset(y: showContent ? 0 : brandingOffset)
+
+                    // Auth Methods
+                    authMethodsSection
+                        .opacity(showContent ? 1 : 0)
+                        .offset(y: showContent ? 0 : brandingOffset)
+
+                    // Terms
+                    termsFooter
+                        .opacity(showContent ? 1 : 0)
+
+                    Spacer(minLength: RouaSpacing.xxxl)
                 }
+                .padding(.horizontal, RouaSpacing.screenPadding)
+            }
+            .scrollDismissesKeyboard(.interactively)
 
-                Spacer()
-
-                // Google Sign In
-                VStack(spacing: RouaTheme.Spacing.lg) {
-                    TradingButton(title: "تسجيل الدخول بحساب Google", style: .primary, isLoading: authService.isLoading) {
-                        Task { await authService.signInWithGoogle() }
-                    }
-
-                    // Divider
-                    HStack {
-                        Rectangle().fill(RouaTheme.Colors.borderLight).frame(height: 1)
-                        Text("أو").font(.system(size: 11)).foregroundStyle(RouaTheme.Colors.textTertiary)
-                        Rectangle().fill(RouaTheme.Colors.borderLight).frame(height: 1)
-                    }
-
-                    // Email field
-                    HStack(spacing: RouaTheme.Spacing.md) {
-                        Image(systemName: "envelope").foregroundStyle(RouaTheme.Colors.textTertiary).frame(width: 20)
-                        TextField("البريد الإلكتروني", text: $email).font(.system(size: 14)).foregroundStyle(RouaTheme.Colors.textPrimary)
-                            .tint(RouaTheme.Colors.accent).textInputAutocapitalization(.never).keyboardType(.emailAddress)
-                    }.padding(RouaTheme.Spacing.lg).background(RouaTheme.Colors.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: RouaTheme.CornerRadius.md))
-
-                    TradingButton(title: showRegistration ? "إنشاء حساب" : "تسجيل الدخول", style: .secondary, isLoading: false) {
-                        Task { await authService.loginWithEmail(email: email) }
-                    }
-
-                    Button(showRegistration ? "لديك حساب بالفعل؟" : "إنشاء حساب جديد") {
-                        withAnimation { showRegistration.toggle() }
-                    }.font(.system(size: 12)).foregroundStyle(RouaTheme.Colors.accentLight)
+            // ── Error Banner ──
+            if let errorMessage = authViewModel.errorMessage {
+                VStack {
+                    ErrorBanner(
+                        message: errorMessage,
+                        onRetry: {
+                            // Retry depends on which method was last used
+                        },
+                        onDismiss: {
+                            authViewModel.errorMessage = nil
+                        }
+                    )
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                    .padding(.top, RouaSpacing.xl)
+                    Spacer()
                 }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
 
-                // Error Display
-                if let error = authService.errorMessage {
-                    ErrorBanner(message: error, onRetry: nil)
-                }
-
-                Spacer()
-                Text("محمي بـ WebAuthn والمصادقة البيومترية").font(.system(size: 10)).foregroundStyle(RouaTheme.Colors.textTertiary)
-            }.padding(.horizontal, RouaTheme.Spacing.xl)
+            // ── Loading Overlay ──
+            if authViewModel.isLoading {
+                LoadingView(message: "جاري تسجيل الدخول…")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: RouaSpacing.animationDuration), value: authViewModel.errorMessage)
+        .animation(.easeOut(duration: RouaSpacing.animationDuration), value: authViewModel.isLoading)
+        .onAppear {
+            performEntranceAnimation()
         }
     }
+
+    // MARK: - Background
+
+    private var backgroundLayer: some View {
+        ZStack {
+            // Base dark gradient
+            LinearGradient(
+                colors: [
+                    Color.rouaBackground,
+                    Color(hex: "0D1220"),
+                    Color(hex: "0A0E17")
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            // Accent glow orbs
+            Circle()
+                .fill(Color.rouaPrimary.opacity(0.08))
+                .frame(width: 300, height: 300)
+                .blur(radius: 80)
+                .offset(x: -80, y: -200)
+
+            Circle()
+                .fill(Color.rouaAccent.opacity(0.06))
+                .frame(width: 250, height: 250)
+                .blur(radius: 60)
+                .offset(x: 100, y: 100)
+
+            // Subtle grid overlay
+            gridOverlay
+        }
+    }
+
+    private var gridOverlay: some View {
+        Canvas { context, size in
+            let gridSpacing: CGFloat = 60
+            context.opacity = 0.03
+
+            for x in stride(from: 0, through: size.width, by: gridSpacing) {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                context.stroke(path, with: .color(.white), lineWidth: 0.5)
+            }
+            for y in stride(from: 0, through: size.height, by: gridSpacing) {
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(path, with: .color(.white), lineWidth: 0.5)
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Branding Section
+
+    private var brandingSection: some View {
+        VStack(spacing: RouaSpacing.lg) {
+            // Logo mark
+            ZStack {
+                // Glow ring
+                Circle()
+                    .stroke(Color.rouaPrimary.opacity(0.3), lineWidth: 2)
+                    .frame(width: 100, height: 100)
+                    .blur(radius: 4)
+
+                Circle()
+                    .fill(Color.rouaGradientPrimary)
+                    .frame(width: 88, height: 88)
+                    .overlay(
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(.white)
+                    )
+                    .shadow(color: .rouaPrimary.opacity(0.4), radius: RouaSpacing.glowRadius)
+            }
+
+            // Brand text
+            Text("ROUA")
+                .font(.system(size: 42, weight: .heavy, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.rouaPrimary, Color.rouaSecondary, Color.rouaAccent],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .tracking(6)
+                .accessibilityLabel("روا")
+
+            // Subtitle
+            Text("منصة التداول الذكية")
+                .rouaFont(.title3, color: .rouaTextSecondary)
+        }
+    }
+
+    // MARK: - Auth Methods
+
+    private var authMethodsSection: some View {
+        VStack(spacing: RouaSpacing.lg) {
+            // ── Google Sign-In (Primary) ──
+            RouaButton(
+                "تسجيل الدخول بـ Google",
+                variant: .primary,
+                size: .large,
+                icon: "globe",
+                isLoading: false,
+                action: { authViewModel.googleSignIn() }
+            )
+
+            // ── Passkey Sign-In (Secondary) ──
+            RouaButton(
+                "تسجيل الدخول بالمفتاح الرقمي",
+                variant: .secondary,
+                size: .large,
+                icon: "key.icon",
+                action: { toggleEmailField() }
+            )
+
+            // ── Email Field (expands when passkey is selected) ──
+            if showEmailField {
+                emailFieldSection
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // ── Create Account (Ghost) ──
+            RouaButton(
+                "إنشاء حساب جديد",
+                variant: .ghost,
+                size: .medium,
+                icon: "person.badge.plus",
+                action: {
+                    if email.isValidEmail {
+                        authViewModel.registerWithPasskey(email: email)
+                    } else {
+                        // Show email field first
+                        if !showEmailField {
+                            toggleEmailField()
+                        } else {
+                            authViewModel.errorMessage = "يرجى إدخال بريد إلكتروني صحيح"
+                        }
+                    }
+                }
+            )
+        }
+        .animation(
+            .spring(response: 0.4, dampingFraction: 0.8),
+            value: showEmailField
+        )
+    }
+
+    // MARK: - Email Field
+
+    private var emailFieldSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            HStack(spacing: RouaSpacing.sm) {
+                Image(systemName: "envelope.fill")
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(.rouaTextTertiary)
+
+                TextField("البريد الإلكتروني", text: $email)
+                    .rouaFont(.callout, color: .rouaTextPrimary)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .autocorrectionDisabled()
+                    .focused($isEmailFocused)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        authViewModel.loginWithPasskey(email: email)
+                    }
+                    .accessibilityLabel("البريد الإلكتروني")
+                    .accessibilityHint("أدخل بريدك الإلكتروني لتسجيل الدخول بالمفتاح الرقمي")
+            }
+            .padding(.horizontal, RouaSpacing.lg)
+            .padding(.vertical, RouaSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                    .fill(Color.rouaGlassStrong)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                    .stroke(
+                        isEmailFocused ? Color.rouaPrimary.opacity(0.5) : Color.rouaGlassBorder,
+                        lineWidth: isEmailFocused ? 1.5 : 1
+                    )
+            )
+            .animation(.easeOut(duration: RouaSpacing.animationFast), value: isEmailFocused)
+
+            // Passkey submit button
+            if email.isNotEmpty {
+                RouaButton(
+                    "متابعة بالمفتاح الرقمي",
+                    variant: .primary,
+                    size: .medium,
+                    icon: "key.fill",
+                    iconPosition: .trailing,
+                    isLoading: authViewModel.isLoading,
+                    isDisabled: !email.isValidEmail,
+                    action: { authViewModel.loginWithPasskey(email: email) }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    // MARK: - Terms Footer
+
+    private var termsFooter: some View {
+        VStack(spacing: RouaSpacing.xs) {
+            Text("بتسجيل الدخول، أنت توافق على")
+                .rouaFont(.footnote, color: .rouaTextTertiary)
+
+            HStack(spacing: RouaSpacing.xs) {
+                Button {
+                    if let url = URL(string: AppConfig.webBaseURL + "/terms") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Text("شروط الاستخدام")
+                        .rouaFont(.footnoteBold, color: .rouaPrimary)
+                }
+
+                Text("و")
+                    .rouaFont(.footnote, color: .rouaTextTertiary)
+
+                Button {
+                    if let url = URL(string: AppConfig.webBaseURL + "/privacy") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Text("سياسة الخصوصية")
+                        .rouaFont(.footnoteBold, color: .rouaPrimary)
+                }
+            }
+        }
+        .padding(.top, RouaSpacing.md)
+    }
+
+    // MARK: - Helpers
+
+    private func toggleEmailField() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            showEmailField.toggle()
+        }
+        if showEmailField {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isEmailFocused = true
+            }
+        }
+    }
+
+    private func performEntranceAnimation() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                showContent = true
+            }
+        }
+    }
+}
+
+// MARK: - Preview
+
+#Preview("AuthView") {
+    ZStack {
+        Color.rouaBackground.ignoresSafeArea()
+        AuthView()
+            .environmentObject(AuthViewModel())
+    }
+    .preferredColorScheme(.dark)
 }

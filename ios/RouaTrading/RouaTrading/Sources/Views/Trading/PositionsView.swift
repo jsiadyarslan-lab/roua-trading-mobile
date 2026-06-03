@@ -65,8 +65,8 @@ struct PositionsView: View {
                 }
             }
         }
-        .onAppear {
-            viewModel.loadPositions()
+        .task {
+            await viewModel.loadPositions()
         }
     }
 

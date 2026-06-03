@@ -126,7 +126,11 @@ extension SettingsView {
     }
 
     private var tierBadge: some View {
-        let tier: UserTier = viewModel.user?.tier ?? .free
+        // Extract user to local variable to avoid @StateObject dynamic member
+        // lookup returning Binding<User?> instead of User? — which breaks
+        // optional chaining + nil-coalescing type inference.
+        let currentUser = viewModel.user
+        let tier: UserTier = currentUser?.tier ?? .free
         return Badge(
             text: tier.displayName,
             variant: tier == .institutional ? .warning : tier == .pro ? .info : .neutral

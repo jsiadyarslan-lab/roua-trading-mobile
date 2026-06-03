@@ -275,7 +275,6 @@ struct PositionsView: View {
         let wins = viewModel.closedTrades.filter { $0.isWinner }.count
         let total = viewModel.closedTrades.count
         let winRate = total > 0 ? Double(wins) / Double(total) : 0
-        let pnlColor: Color = .rouaPnLColor(value: totalPnl)
 
         return GlassCard {
             HStack(spacing: RouaSpacing.lg) {

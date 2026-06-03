@@ -246,9 +246,7 @@ private struct ScannerTabContent: View {
     private var scannerResultsList: some View {
         List {
             ForEach(viewModel.scanResults) { result in
-                NavigationLink(destination: LazyView {
-                    DeepAnalysisView(symbol: result.symbol)
-                }) {
+                NavigationLink(destination: LazyView(DeepAnalysisView(symbol: result.symbol))) {
                     ScannerResultRow(result: result)
                 }
                 .listRowBackground(Color.clear)

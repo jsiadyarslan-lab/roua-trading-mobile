@@ -186,9 +186,7 @@ struct ScannerView: View {
     private var resultsList: some View {
         List {
             ForEach(filteredResults) { result in
-                NavigationLink(destination: LazyView {
-                    DeepAnalysisView(symbol: result.symbol)
-                }) {
+                NavigationLink(destination: LazyView(DeepAnalysisView(symbol: result.symbol))) {
                     DetailedScannerRow(result: result)
                 }
                 .listRowBackground(Color.clear)

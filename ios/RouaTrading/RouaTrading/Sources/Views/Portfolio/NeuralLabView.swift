@@ -1149,7 +1149,7 @@ struct PredictionChartView: View {
                 }
             }
         }
-        .stroke(color, lineWidth: 1, style: StrokeStyle(lineCap: .round, dash: [4, 4]))
+        .stroke(color, style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 4]))
     }
 }
 

@@ -202,7 +202,7 @@ struct RouaButton: View {
         .opacity(isDisabled ? 0.4 : 1.0)
         .accessibilityLabel(title)
         .accessibilityAddTraits(.isButton)
-        .accessibilityRemoveTraits(isDisabled ? .isEnabled : [])
+        .accessibilityRemoveTraits(isDisabled ? .isButton : [])
     }
 
     // MARK: - Content

@@ -591,7 +591,7 @@ private struct NewsItemRow: View {
                 }
 
                 // Summary
-                if let summary = item.summary {
+                if item.summary != nil {
                     Text(item.truncatedSummary())
                         .rouaFont(.footnote, color: .rouaTextSecondary)
                         .lineLimit(2)

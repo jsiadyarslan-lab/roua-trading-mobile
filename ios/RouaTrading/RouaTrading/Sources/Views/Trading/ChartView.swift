@@ -165,6 +165,7 @@ class ChartViewWrapper: UIView {
     private var chart: LightweightCharts?
     private var candlestickSeries: CandlestickSeries?
     private var volumeSeries: HistogramSeries?
+    private var priceLineSources: [PriceLine] = []
     private var hasFittedContent: Bool = false
 
     // MARK: - Setup
@@ -362,14 +363,16 @@ class ChartViewWrapper: UIView {
         guard let series = candlestickSeries else { return }
 
         // Remove existing price lines
-        series.priceLines().forEach { _ in
-            // LightweightCharts v4: clear all then re-add
+        for source in priceLineSources {
+            series.removePriceLine(source)
         }
+        priceLineSources.removeAll()
 
         // Add new price lines
         for annotation in annotations {
             let options = annotation.toPriceLineOptions()
-            series.createPriceLine(options: options)
+            let source = series.createPriceLine(options: options)
+            priceLineSources.append(source)
         }
     }
 

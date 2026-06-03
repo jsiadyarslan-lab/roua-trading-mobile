@@ -148,7 +148,7 @@ struct DeepAnalysisView: View {
                     VStack(spacing: RouaSpacing.md) {
                         // Consensus signal + confidence
                         HStack {
-                            SignalBadge(signal: mapBriefDirectionToSignal(consensus.consensus))
+                            SignalBadge(signal: consensus.consensus)
                             Spacer()
                             Text("الثقة: \(consensus.confidence)%")
                                 .rouaFont(.calloutBold, color: confidenceColor(consensus.confidence))
@@ -358,14 +358,6 @@ struct DeepAnalysisView: View {
         case 60..<80:  return .rouaPrimary
         case 40..<60:  return .rouaWarning
         default:       return .rouaLoss
-        }
-    }
-
-    private func mapBriefDirectionToSignal(_ direction: BriefDirection) -> SignalDirection {
-        switch direction {
-        case .bullish:  return .buy
-        case .bearish:  return .sell
-        case .neutral:  return .neutral
         }
     }
 }

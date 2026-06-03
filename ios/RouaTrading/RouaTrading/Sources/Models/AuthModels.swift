@@ -12,13 +12,43 @@ import Foundation
 // MARK: - User
 
 /// The authenticated user's profile.
-struct User: Codable, Identifiable, Hashable {
+struct User: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let email: String
     let displayName: String
     let tier: UserTier
     let avatarUrl: String?
     let createdAt: String
+
+    // ---- CodingKeys (backend may send 'name' instead of 'displayName') ----
+    private enum CodingKeys: String, CodingKey {
+        case id, email, displayName, tier
+        case avatarUrl = "avatarUrl"
+        case createdAt
+    }
+
+    /// Fallback initializer that accepts 'name' as an alias for 'displayName'.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        email = try container.decode(String.self, forKey: .email)
+        tier = try container.decodeIfPresent(UserTier.self, forKey: .tier) ?? .free
+        avatarUrl = try container.decodeIfPresent(String.self, forKey: .avatarUrl)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        // Accept 'displayName' or fall back to 'name' for backend compatibility
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+            ?? (try? container.decode(String.self, forKey: .displayName)) ?? email
+    }
+
+    // Direct memberwise init for programmatic creation
+    init(id: String, email: String, displayName: String, tier: UserTier = .free, avatarUrl: String? = nil, createdAt: String = "") {
+        self.id = id
+        self.email = email
+        self.displayName = displayName
+        self.tier = tier
+        self.avatarUrl = avatarUrl
+        self.createdAt = createdAt
+    }
 
     // ---- Hashable (email-based identity) ----
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

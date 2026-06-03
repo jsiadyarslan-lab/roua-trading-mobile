@@ -4,27 +4,14 @@ import CryptoKit
 
 // MARK: - Auth Models
 
-/// Represents an authenticated user.
-struct User: Codable, Sendable {
-    let id: String
-    let email: String
-    let name: String?
-    let avatar: String?
-    let role: String?
-    let createdAt: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case id, email, name, avatar, role
-        case createdAt = "created_at"
-    }
-}
+// NOTE: `User` is defined in AuthModels.swift — do not redefine here.
 
 /// Challenge response from the WebAuthn registration/authentication flow.
 struct WebAuthnChallenge: Codable {
     let challenge: String
     let rpId: String?
-    let allowCredentials: [WebAuthnCredentialDescriptor]?
-    let excludeCredentials: [WebAuthnCredentialDescriptor]?
+    let allowCredentials: [AuthCredentialDescriptor]?
+    let excludeCredentials: [AuthCredentialDescriptor]?
 
     private enum CodingKeys: String, CodingKey {
         case challenge, rpId
@@ -34,7 +21,9 @@ struct WebAuthnChallenge: Codable {
 }
 
 /// A credential descriptor used in WebAuthn challenges.
-struct WebAuthnCredentialDescriptor: Codable {
+/// Named differently from WebAuthnRegistrationOptions.WebAuthnCredentialDescriptor
+/// in AuthModels.swift to avoid any ambiguity.
+struct AuthCredentialDescriptor: Codable {
     let id: String
     let type: String?
     let transports: [String]?

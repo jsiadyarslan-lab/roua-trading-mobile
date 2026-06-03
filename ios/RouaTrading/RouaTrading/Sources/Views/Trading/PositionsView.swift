@@ -56,9 +56,9 @@ struct PositionsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     // Position count badge
-                    if !viewModel.openPositions.isEmpty {
+                    if !viewModel.positions.isEmpty {
                         Badge(
-                            text: "\(viewModel.openPositions.count)",
+                            text: "\(viewModel.positions.count)",
                             variant: .info
                         )
                     }
@@ -94,7 +94,7 @@ struct PositionsView: View {
                                 // Count badge
                                 if selectedTab == tab {
                                     let count = tab == .open
-                                        ? viewModel.openPositions.count
+                                        ? viewModel.positions.count
                                         : viewModel.closedTrades.count
                                     if count > 0 {
                                         Text("\(count)")
@@ -135,9 +135,9 @@ struct PositionsView: View {
 
     @ViewBuilder
     private var openPositionsTab: some View {
-        if viewModel.isLoadingPositions && viewModel.openPositions.isEmpty {
+        if viewModel.isLoading && viewModel.positions.isEmpty {
             loadingSkeleton
-        } else if viewModel.openPositions.isEmpty {
+        } else if viewModel.positions.isEmpty {
             emptyOpenPositions
         } else {
             openPositionsList
@@ -167,10 +167,10 @@ struct PositionsView: View {
                 openPositionsSummary
 
                 // Position rows
-                ForEach(viewModel.openPositions) { position in
+                ForEach(viewModel.positions) { position in
                     OpenPositionCard(
                         position: position,
-                        onClose: { viewModel.closePosition(position) },
+                        onClose: { Task { await viewModel.closePosition(id: position.id) } },
                         onTap: {
                             // TODO: Navigate to position detail
                         }
@@ -185,7 +185,7 @@ struct PositionsView: View {
             .padding(.vertical, RouaSpacing.md)
         }
         .refreshable {
-            await viewModel.refreshAll()
+            viewModel.loadAllData(); await Task.yield()
         }
     }
 
@@ -193,8 +193,8 @@ struct PositionsView: View {
 
     @ViewBuilder
     private var openPositionsSummary: some View {
-        let totalPnl = viewModel.openPositions.reduce(0) { $0 + $1.unrealizedPnl }
-        let totalValue = viewModel.openPositions.reduce(0) {
+        let totalPnl = viewModel.positions.reduce(0) { $0 + $1.unrealizedPnl }
+        let totalValue = viewModel.positions.reduce(0) {
             $0 + $1.currentValue
         }
         let pnlColor: Color = .rouaPnLColor(value: totalPnl)
@@ -229,7 +229,7 @@ struct PositionsView: View {
 
     @ViewBuilder
     private var closedTradesTab: some View {
-        if viewModel.isLoadingTrades && viewModel.closedTrades.isEmpty {
+        if viewModel.isLoading && viewModel.closedTrades.isEmpty {
             loadingSkeleton
         } else if viewModel.closedTrades.isEmpty {
             emptyClosedTrades
@@ -265,7 +265,7 @@ struct PositionsView: View {
             .padding(.vertical, RouaSpacing.md)
         }
         .refreshable {
-            await viewModel.refreshAll()
+            viewModel.loadAllData(); await Task.yield()
         }
     }
 

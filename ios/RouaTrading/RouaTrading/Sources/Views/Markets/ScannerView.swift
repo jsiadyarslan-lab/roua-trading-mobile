@@ -34,7 +34,7 @@ struct ScannerView: View {
                 categoryFilter
 
                 // Results or empty state
-                if viewModel.scannerResults.isEmpty {
+                if viewModel.scanResults.isEmpty {
                     Spacer()
                     EmptyStateView(
                         icon: "magnifyingglass",
@@ -63,8 +63,8 @@ struct ScannerView: View {
                 if let error = viewModel.errorMessage {
                     ErrorBanner(
                         message: error,
-                        onRetry: { viewModel.refresh() },
-                        onDismiss: { viewModel.clearError() }
+                        onRetry: { viewModel.loadAll() },
+                        onDismiss: { viewModel.errorMessage = nil }
                     )
                     .padding(.horizontal, RouaSpacing.screenPadding)
                     .padding(.top, RouaSpacing.md)
@@ -84,14 +84,10 @@ struct ScannerView: View {
 
             TextField("ابحث عن رمز…", text: $searchText)
                 .rouaFont(.callout, color: .rouaTextPrimary)
-                .onChange(of: searchText) { _, newValue in
-                    viewModel.searchQuery = newValue
-                }
 
             if !searchText.isEmpty {
                 Button {
                     searchText = ""
-                    viewModel.searchQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: RouaSpacing.iconMedium))
@@ -118,10 +114,10 @@ struct ScannerView: View {
     private var timeframeSelector: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: RouaSpacing.sm) {
-                ForEach(ScannerTimeframe.allCases) { tf in
+                ForEach(TimeFrame.allCases) { tf in
                     Button {
                         withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                            viewModel.selectedTimeframe = tf
+                            viewModel.updateTimeframe(tf)
                         }
                     } label: {
                         HStack(spacing: RouaSpacing.xs) {
@@ -159,7 +155,7 @@ struct ScannerView: View {
                 ForEach(MarketCategory.allCases) { cat in
                     Button {
                         withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                            viewModel.selectedCategory = cat
+                            viewModel.updateCategory(cat)
                         }
                     } label: {
                         Text(cat.displayName)
@@ -189,7 +185,7 @@ struct ScannerView: View {
 
     private var resultsList: some View {
         List {
-            ForEach(viewModel.scannerResults) { result in
+            ForEach(filteredResults) { result in
                 NavigationLink(destination: LazyView {
                     DeepAnalysisView(symbol: result.symbol)
                 }) {
@@ -202,6 +198,16 @@ struct ScannerView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    // MARK: - Filtered Results
+
+    private var filteredResults: [ScannerResult] {
+        guard !searchText.isEmpty else { return viewModel.scanResults }
+        return viewModel.scanResults.filter {
+            $0.symbol.localizedCaseInsensitiveContains(searchText) ||
+            ($0.name?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
     }
 
     // MARK: - Run Scanner Button
@@ -223,9 +229,8 @@ struct ScannerView: View {
 
     private func runScanner() {
         isRunning = true
-        viewModel.runScanner()
-        // Simulate loading completion after the VM finishes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task {
+            await viewModel.runScan()
             isRunning = false
         }
     }

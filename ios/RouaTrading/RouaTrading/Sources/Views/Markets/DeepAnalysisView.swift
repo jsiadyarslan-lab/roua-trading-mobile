@@ -15,6 +15,7 @@ struct DeepAnalysisView: View {
     let symbol: String
 
     @StateObject private var viewModel = MarketsViewModel()
+    @StateObject private var aiViewModel = AIViewModel()
     @State private var selectedTimeframe: AnalysisTimeframe = .oneHour
     @State private var showConsensus = false
 
@@ -53,11 +54,11 @@ struct DeepAnalysisView: View {
             }
         }
         .task {
-            viewModel.loadDeepAnalysis(for: symbol, timeframe: selectedTimeframe.apiValue)
-            viewModel.loadConsensus(for: symbol)
+            await viewModel.loadDeepAnalysis(symbol: symbol)
+            await aiViewModel.loadConsensus(symbol: symbol)
         }
-        .onChange(of: selectedTimeframe) { _, newTF in
-            viewModel.loadDeepAnalysis(for: symbol, timeframe: newTF.apiValue)
+        .onChange(of: selectedTimeframe) { _, _ in
+            Task { await viewModel.loadDeepAnalysis(symbol: symbol) }
         }
     }
 
@@ -142,7 +143,7 @@ struct DeepAnalysisView: View {
                 showConsensus.toggle()
             }
 
-            if let consensus = viewModel.consensusResult {
+            if let consensus = aiViewModel.consensusResult {
                 GlassCard {
                     VStack(spacing: RouaSpacing.md) {
                         // Consensus signal + confidence

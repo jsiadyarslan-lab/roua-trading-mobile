@@ -35,6 +35,7 @@ struct MarketsView: View {
     // MARK: - State
 
     @State private var selectedSegment: MarketsSegment = .scanner
+    @State private var selectedNewsFilter: NewsFilter = .all
 
     // MARK: - Body
 
@@ -52,7 +53,7 @@ struct MarketsView: View {
                     case .heatmap:
                         HeatmapTabContent(viewModel: viewModel)
                     case .news:
-                        NewsTabContent(viewModel: viewModel)
+                        NewsTabContent(viewModel: viewModel, selectedFilter: $selectedNewsFilter)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,7 +64,7 @@ struct MarketsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        viewModel.refresh()
+                        viewModel.loadAll()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .foregroundStyle(.rouaPrimary)
@@ -72,11 +73,11 @@ struct MarketsView: View {
                 }
             }
             .refreshable {
-                viewModel.refresh()
+                viewModel.loadAll(); await Task.yield()
             }
             .overlay {
-                if viewModel.isLoading && viewModel.scannerResults.isEmpty
-                    && viewModel.heatmapItems.isEmpty
+                if viewModel.isLoading && viewModel.scanResults.isEmpty
+                    && viewModel.heatmapData.isEmpty
                     && viewModel.newsItems.isEmpty {
                     LoadingView(message: "جارٍ تحميل بيانات السوق…")
                 }
@@ -85,8 +86,8 @@ struct MarketsView: View {
                 if let error = viewModel.errorMessage {
                     ErrorBanner(
                         message: error,
-                        onRetry: { viewModel.refresh() },
-                        onDismiss: { viewModel.clearError() }
+                        onRetry: { viewModel.loadAll() },
+                        onDismiss: { viewModel.errorMessage = nil }
                     )
                     .padding(.horizontal, RouaSpacing.screenPadding)
                     .padding(.top, RouaSpacing.md)
@@ -152,14 +153,14 @@ private struct ScannerTabContent: View {
             categoryFilter
 
             // Results list
-            if viewModel.scannerResults.isEmpty {
+            if viewModel.scanResults.isEmpty {
                 Spacer()
                 EmptyStateView(
                     icon: "magnifyingglass",
                     title: "لا توجد نتائج",
                     description: "قم بتشغيل الماسح للعثور على فرص التداول",
                     buttonTitle: "تشغيل الماسح",
-                    buttonAction: { viewModel.runScanner() }
+                    buttonAction: { Task { await viewModel.runScan() } }
                 )
                 Spacer()
             } else {
@@ -173,10 +174,10 @@ private struct ScannerTabContent: View {
     private var timeframeSelector: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: RouaSpacing.sm) {
-                ForEach(ScannerTimeframe.allCases) { tf in
+                ForEach(TimeFrame.allCases) { tf in
                     Button {
                         withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                            viewModel.selectedTimeframe = tf
+                            viewModel.updateTimeframe(tf)
                         }
                     } label: {
                         Text(tf.displayName)
@@ -212,7 +213,7 @@ private struct ScannerTabContent: View {
                 ForEach(MarketCategory.allCases) { cat in
                     Button {
                         withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                            viewModel.selectedCategory = cat
+                            viewModel.updateCategory(cat)
                         }
                     } label: {
                         Text(cat.displayName)
@@ -244,7 +245,7 @@ private struct ScannerTabContent: View {
 
     private var scannerResultsList: some View {
         List {
-            ForEach(viewModel.scannerResults) { result in
+            ForEach(viewModel.scanResults) { result in
                 NavigationLink(destination: LazyView {
                     DeepAnalysisView(symbol: result.symbol)
                 }) {
@@ -347,28 +348,6 @@ struct SignalBadge: View {
     }
 }
 
-// MARK: - Scanner Timeframe
-
-enum ScannerTimeframe: String, CaseIterable, Identifiable {
-    case fifteenMin = "15min"
-    case oneHour    = "1H"
-    case fourHour   = "4H"
-    case oneDay     = "1D"
-
-    var id: String { rawValue }
-
-    var displayName: String { rawValue }
-
-    var apiValue: String {
-        switch self {
-        case .fifteenMin: return "15min"
-        case .oneHour:    return "1h"
-        case .fourHour:   return "4h"
-        case .oneDay:     return "1day"
-        }
-    }
-}
-
 // MARK: - Heatmap Tab Content
 
 private struct HeatmapTabContent: View {
@@ -389,7 +368,7 @@ private struct HeatmapTabContent: View {
                     ForEach(MarketCategory.allCases) { cat in
                         Button {
                             withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                                viewModel.selectedCategory = cat
+                                viewModel.updateCategory(cat)
                             }
                         } label: {
                             Text(cat.displayName)
@@ -414,7 +393,7 @@ private struct HeatmapTabContent: View {
             }
             .padding(.vertical, RouaSpacing.sm)
 
-            if viewModel.heatmapItems.isEmpty {
+            if viewModel.heatmapData.isEmpty {
                 Spacer()
                 EmptyStateView(
                     icon: "square.grid.3x3",
@@ -425,7 +404,7 @@ private struct HeatmapTabContent: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: RouaSpacing.xs) {
-                        ForEach(viewModel.heatmapItems) { item in
+                        ForEach(viewModel.heatmapData) { item in
                             HeatmapCell(item: item)
                                 .onTapGesture {
                                     // Navigate to deep analysis
@@ -493,6 +472,7 @@ private struct HeatmapCell: View {
 private struct NewsTabContent: View {
 
     @ObservedObject var viewModel: MarketsViewModel
+    @Binding var selectedFilter: NewsFilter
 
     var body: some View {
         VStack(spacing: 0) {
@@ -514,25 +494,38 @@ private struct NewsTabContent: View {
         }
     }
 
+    private var filteredNews: [NewsItem] {
+        switch selectedFilter {
+        case .all:
+            return viewModel.newsItems
+        case .positive:
+            return viewModel.newsItems.filter { $0.sentiment == .positive }
+        case .negative:
+            return viewModel.newsItems.filter { $0.sentiment == .negative }
+        case .neutral:
+            return viewModel.newsItems.filter { $0.sentiment == .neutral }
+        }
+    }
+
     private var sentimentFilter: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: RouaSpacing.sm) {
                 ForEach(NewsFilter.allCases) { filter in
                     Button {
                         withAnimation(.easeInOut(duration: RouaSpacing.animationFast)) {
-                            viewModel.selectedNewsFilter = filter
+                            selectedFilter = filter
                         }
                     } label: {
                         Text(filter.displayName)
                             .rouaFont(
                                 .captionBold,
-                                color: viewModel.selectedNewsFilter == filter ? .white : .rouaTextSecondary
+                                color: selectedFilter == filter ? .white : .rouaTextSecondary
                             )
                             .padding(.horizontal, RouaSpacing.md)
                             .padding(.vertical, RouaSpacing.xs)
                             .background(
                                 Capsule().fill(
-                                    viewModel.selectedNewsFilter == filter
+                                    selectedFilter == filter
                                         ? Color.rouaPrimary
                                         : Color.rouaSurfaceHover
                                 )
@@ -548,7 +541,7 @@ private struct NewsTabContent: View {
 
     private var newsList: some View {
         List {
-            ForEach(viewModel.filteredNewsItems) { item in
+            ForEach(filteredNews) { item in
                 NewsItemRow(item: item)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)

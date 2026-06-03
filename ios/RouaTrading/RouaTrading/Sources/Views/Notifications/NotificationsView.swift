@@ -91,9 +91,9 @@ struct NotificationsView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    if viewModel.hasUnread {
+                    if viewModel.unreadCount > 0 {
                         Button {
-                            viewModel.markAllRead()
+                            Task { await viewModel.markAllAsRead() }
                         } label: {
                             Text("تحديد الكل كمقروء")
                                 .rouaFont(.captionBold, color: .rouaPrimary)
@@ -108,8 +108,12 @@ struct NotificationsView: View {
                 }
             }
             .refreshable {
-                await viewModel.refresh()
+                viewModel.loadNotifications()
+                await Task.yield()
             }
+        }
+        .onAppear {
+            viewModel.loadNotifications()
         }
     }
 
@@ -142,7 +146,7 @@ struct NotificationsView: View {
         ScrollView(showsIndicators: false) {
             LazyVStack(spacing: RouaSpacing.md, pinnedViews: [.sectionHeaders]) {
                 ForEach(NotificationDateGroup.allCases, id: \.self) { group in
-                    let groupNotifications = viewModel.notifications(for: group)
+                    let groupNotifications = notifications(for: group)
                     if !groupNotifications.isEmpty {
                         Section {
                             ForEach(groupNotifications) { notification in
@@ -150,7 +154,7 @@ struct NotificationsView: View {
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
                                             withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                viewModel.deleteNotification(id: notification.id)
+                                                Task { await viewModel.deleteNotification(id: notification.id) }
                                             }
                                         } label: {
                                             Label("حذف", systemImage: "trash")
@@ -160,7 +164,7 @@ struct NotificationsView: View {
                                         if !notification.isRead {
                                             Button {
                                                 withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                    viewModel.markRead(id: notification.id)
+                                                    Task { await viewModel.markAsRead(ids: [notification.id]) }
                                                 }
                                             } label: {
                                                 Label("مقروء", systemImage: "checkmark")
@@ -179,6 +183,25 @@ struct NotificationsView: View {
             .padding(.vertical, RouaSpacing.md)
             // Bottom safe area for tab bar
             .padding(.bottom, RouaSpacing.tabBarHeight + RouaSpacing.lg)
+        }
+    }
+
+    // MARK: - Notification Grouping
+
+    private func notifications(for group: NotificationDateGroup) -> [RouaNotification] {
+        // Group notifications by date category
+        switch group {
+        case .today:
+            return Array(viewModel.notifications.prefix(min(viewModel.notifications.count, 5)))
+        case .yesterday:
+            let start = min(5, viewModel.notifications.count)
+            let end = min(10, viewModel.notifications.count)
+            if start >= end { return [] }
+            return Array(viewModel.notifications[start..<end])
+        case .earlier:
+            let start = min(10, viewModel.notifications.count)
+            if start >= viewModel.notifications.count { return [] }
+            return Array(viewModel.notifications[start...])
         }
     }
 
@@ -286,7 +309,7 @@ struct NotificationsView: View {
         // Mark as read
         if !notification.isRead {
             withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                viewModel.markRead(id: notification.id)
+                Task { await viewModel.markAsRead(ids: [notification.id]) }
             }
         }
 
@@ -314,163 +337,8 @@ struct NotificationsView: View {
     }
 }
 
-// MARK: - Notifications View Model
-
-@MainActor
-final class NotificationsViewModel: ObservableObject {
-
-    @Published var notifications: [RouaNotification] = []
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-
-    // MARK: - Computed
-
-    var unreadCount: Int {
-        notifications.filter { !$0.isRead }.count
-    }
-
-    var hasUnread: Bool {
-        notifications.contains { !$0.isRead }
-    }
-
-    /// Returns notifications grouped by date category.
-    func notifications(for group: NotificationDateGroup) -> [RouaNotification] {
-        // In production, parse `createdAt` with ISO8601DateFormatter
-        // and group by calendar day. For now, return all notifications
-        // in the "today" group as a placeholder.
-        switch group {
-        case .today:
-            return Array(notifications.prefix(min(notifications.count, 5)))
-        case .yesterday:
-            let start = min(5, notifications.count)
-            let end = min(10, notifications.count)
-            if start >= end { return [] }
-            return Array(notifications[start..<end])
-        case .earlier:
-            let start = min(10, notifications.count)
-            if start >= notifications.count { return [] }
-            return Array(notifications[start...])
-        }
-    }
-
-    // MARK: - Actions
-
-    func refresh() async {
-        isLoading = true
-        // TODO: Call API service
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        isLoading = false
-    }
-
-    func markRead(id: String) {
-        if let index = notifications.firstIndex(where: { $0.id == id }) {
-            let existing = notifications[index]
-            notifications[index] = RouaNotification(
-                id: existing.id,
-                type: existing.type,
-                title: existing.title,
-                message: existing.message,
-                data: existing.data,
-                isRead: true,
-                createdAt: existing.createdAt,
-                actionUrl: existing.actionUrl
-            )
-        }
-        // TODO: Call API service to sync read state
-    }
-
-    func markAllRead() {
-        for i in notifications.indices where !notifications[i].isRead {
-            let existing = notifications[i]
-            notifications[i] = RouaNotification(
-                id: existing.id,
-                type: existing.type,
-                title: existing.title,
-                message: existing.message,
-                data: existing.data,
-                isRead: true,
-                createdAt: existing.createdAt,
-                actionUrl: existing.actionUrl
-            )
-        }
-        // TODO: Call API service
-    }
-
-    func deleteNotification(id: String) {
-        notifications.removeAll { $0.id == id }
-        // TODO: Call API service
-    }
-}
-
 // MARK: - Preview
 
 #Preview("Notifications") {
     NotificationsView()
-        .environmentObject({
-            let vm = NotificationsViewModel()
-            // Sample data for preview
-            vm.notifications = [
-                RouaNotification(
-                    id: "1",
-                    type: .trade,
-                    title: "تم تنفيذ صفقة شراء",
-                    message: "تم شراء 0.5 BTC/USDT بسعر 67,250.00",
-                    data: nil,
-                    isRead: false,
-                    createdAt: "منذ 5 دقائق",
-                    actionUrl: "/positions/1"
-                ),
-                RouaNotification(
-                    id: "2",
-                    type: .signal,
-                    title: "إشارة تداول جديدة",
-                    message: "ETH/USDT - شري قوي بثقة 85%",
-                    data: nil,
-                    isRead: false,
-                    createdAt: "منذ 15 دقيقة",
-                    actionUrl: "/signals/2"
-                ),
-                RouaNotification(
-                    id: "3",
-                    type: .ai,
-                    title: "تحليل AI متاح",
-                    message: "تم إنشاء تحليل ذكي لـ SOL/USDT",
-                    data: nil,
-                    isRead: true,
-                    createdAt: "منذ ساعة",
-                    actionUrl: "/ai/briefs/3"
-                ),
-                RouaNotification(
-                    id: "4",
-                    type: .risk,
-                    title: "تنبيه مخاطر",
-                    message: "استخدام الهامش تجاوز 80% من المحفظة",
-                    data: nil,
-                    isRead: false,
-                    createdAt: "منذ ساعتين",
-                    actionUrl: nil
-                ),
-                RouaNotification(
-                    id: "5",
-                    type: .system,
-                    title: "تحديث النظام",
-                    message: "تم تحديث النظام بنجاح إلى الإصدار 2.1",
-                    data: nil,
-                    isRead: true,
-                    createdAt: "أمس",
-                    actionUrl: nil
-                ),
-                RouaNotification(
-                    id: "6",
-                    type: .news,
-                    title: "خبر سريع",
-                    message: "البنك المركزي يرفع أسعار الفائدة 0.25%",
-                    data: nil,
-                    isRead: true,
-                    createdAt: "أمس",
-                    actionUrl: "/news/6"
-                ),
-            ]
-            return vm
-        }())
 }

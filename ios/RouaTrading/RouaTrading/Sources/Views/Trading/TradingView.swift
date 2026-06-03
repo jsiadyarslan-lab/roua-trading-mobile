@@ -76,7 +76,7 @@ struct TradingView: View {
                 .padding(.bottom, RouaSpacing.buttonHeightLarge + RouaSpacing.lg)
             }
             .refreshable {
-                viewModel.loadAllData()
+                viewModel.loadAllData(); await Task.yield()
             }
 
             // ── Floating Buy / Sell Buttons ──

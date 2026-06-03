@@ -19,6 +19,27 @@ struct AIModelsView: View {
     @State private var isDiagnosing = false
     @State private var showDiagnosticResult = false
 
+    // MARK: - Computed helpers
+
+    private var models: [ModelStatus] {
+        viewModel.aiModels?.models ?? []
+    }
+
+    private var modelsAllAvailable: Bool {
+        viewModel.aiModels?.models.allSatisfy { $0.available } ?? false
+    }
+
+    private var modelsLastChecked: String {
+        viewModel.aiModels?.timestamp ?? "—"
+    }
+
+    private var averageLatency: String {
+        let availableModels = models.compactMap { $0.latency }
+        guard !availableModels.isEmpty else { return "—" }
+        let avg = availableModels.reduce(0, +) / Double(availableModels.count)
+        return String(format: "%.1fs", avg)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -40,11 +61,11 @@ struct AIModelsView: View {
                 // Model cards grid
                 SectionHeader(
                     title: "النماذج المتاحة",
-                    actionTitle: "\(viewModel.models.filter { $0.available }.count)/\(viewModel.models.count)",
+                    actionTitle: "\(models.filter { $0.available }.count)/\(models.count)",
                     action: {}
                 )
 
-                if viewModel.models.isEmpty {
+                if models.isEmpty {
                     // Shimmer loading state
                     modelShimmerGrid
                 } else {
@@ -67,26 +88,26 @@ struct AIModelsView: View {
     // MARK: - Overall Summary Card
 
     private var overallSummaryCard: some View {
-        GlassCard(glow: viewModel.modelsAllAvailable ? .rouaProfit : .rouaWarning) {
+        GlassCard(glow: modelsAllAvailable ? .rouaProfit : .rouaWarning) {
             VStack(spacing: RouaSpacing.md) {
                 HStack {
                     PulsingDot(
-                        status: viewModel.modelsAllAvailable ? .active : .warning,
+                        status: modelsAllAvailable ? .active : .warning,
                         size: 12
                     )
 
                     VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                        Text(viewModel.modelsAllAvailable ? "جميع النماذج متاحة" : "بعض النماذج غير متاحة")
+                        Text(modelsAllAvailable ? "جميع النماذج متاحة" : "بعض النماذج غير متاحة")
                             .rouaFont(.calloutBold, color: .rouaTextPrimary)
-                        Text("آخر فحص: \(viewModel.modelsLastChecked)")
+                        Text("آخر فحص: \(modelsLastChecked)")
                             .rouaFont(.caption, color: .rouaTextTertiary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Availability pie indicator
                     AvailabilityIndicator(
-                        available: viewModel.models.filter { $0.available }.count,
-                        total: viewModel.models.count
+                        available: models.filter { $0.available }.count,
+                        total: models.count
                     )
                 }
 
@@ -94,19 +115,19 @@ struct AIModelsView: View {
                 HStack(spacing: 0) {
                     StatMini(
                         label: "المتاحة",
-                        value: "\(viewModel.models.filter { $0.available }.count)"
+                        value: "\(models.filter { $0.available }.count)"
                     )
                     .frame(maxWidth: .infinity)
 
                     StatMini(
                         label: "غير متاحة",
-                        value: "\(viewModel.models.filter { !$0.available }.count)"
+                        value: "\(models.filter { !$0.available }.count)"
                     )
                     .frame(maxWidth: .infinity)
 
                     StatMini(
                         label: "متوسط التأخير",
-                        value: viewModel.averageLatency
+                        value: averageLatency
                     )
                     .frame(maxWidth: .infinity)
                 }
@@ -124,7 +145,7 @@ struct AIModelsView: View {
             ],
             spacing: RouaSpacing.sm
         ) {
-            ForEach(viewModel.models) { model in
+            ForEach(models) { model in
                 ModelCard(model: model)
             }
         }
@@ -167,7 +188,7 @@ struct AIModelsView: View {
                     Spacer()
                 }
 
-                ForEach(viewModel.models) { model in
+                ForEach(models) { model in
                     HStack {
                         PulsingDot(
                             status: model.available ? .active : .error,
@@ -192,7 +213,7 @@ struct AIModelsView: View {
 
     private func runDiagnosis() {
         isDiagnosing = true
-        viewModel.diagnoseModels()
+        Task { await viewModel.loadAIModels() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             isDiagnosing = false
             withAnimation(.easeInOut(duration: RouaSpacing.animationDuration)) {

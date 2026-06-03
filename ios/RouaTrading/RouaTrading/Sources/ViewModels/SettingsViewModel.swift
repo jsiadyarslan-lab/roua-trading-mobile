@@ -45,6 +45,48 @@ final class SettingsViewModel: ObservableObject {
     /// The most recent error message, if any.
     @Published var errorMessage: String?
 
+    // MARK: - Security Settings
+
+    /// Whether biometric authentication is enabled.
+    @Published var biometricEnabled: Bool = true
+
+    // MARK: - Notification Toggle Settings
+
+    /// Whether push notifications are enabled.
+    @Published var pushNotificationsEnabled: Bool = true
+
+    /// Whether signal alerts are enabled.
+    @Published var signalAlertsEnabled: Bool = true
+
+    /// Whether trade alerts are enabled.
+    @Published var tradeAlertsEnabled: Bool = true
+
+    /// Whether AI alerts are enabled.
+    @Published var aiAlertsEnabled: Bool = true
+
+    /// Whether scanner alerts are enabled.
+    @Published var scannerAlertsEnabled: Bool = true
+
+    /// Whether risk alerts are enabled.
+    @Published var riskAlertsEnabled: Bool = true
+
+    /// Whether auto-execute signals is enabled.
+    @Published var autoExecuteEnabled: Bool = false
+
+    /// Minimum confidence for auto-execution.
+    @Published var minConfidence: Double = 75
+
+    // MARK: - Trading Settings
+
+    /// Default exchange credential ID.
+    @Published var defaultCredentialId: String?
+
+    /// Default order type.
+    @Published var defaultOrderType: OrderType = .market
+
+    /// Whether to confirm before trading.
+    @Published var confirmBeforeTrading: Bool = true
+
     // MARK: - Dependencies
 
     private let apiClient = APIClient.shared
@@ -57,6 +99,36 @@ final class SettingsViewModel: ObservableObject {
     init() {
         // Seed user from AuthService
         self.user = authService.currentUser
+    }
+
+    // MARK: - Computed
+
+    /// Biometric label (e.g., "Face ID").
+    var biometricLabel: String {
+        // Check device capability in production
+        "Face ID"
+    }
+
+    /// Biometric icon name.
+    var biometricIcon: String {
+        "faceid"
+    }
+
+    /// Display label for the default credential.
+    var defaultCredentialLabel: String {
+        defaultCredentialId != nil ? "محدد" : "غير محدد"
+    }
+
+    /// Summary of risk limits.
+    var riskLimitsSummary: String {
+        "10% حجم • 5% خسارة يومية"
+    }
+
+    /// App version string.
+    var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
     }
 
     // MARK: - Load All
@@ -117,6 +189,13 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
+    /// Revokes a session by ID (alias for deleteSession).
+    ///
+    /// - Parameter id: The session identifier to revoke.
+    func revokeSession(id: String) {
+        Task { await deleteSession(id: id) }
+    }
+
     /// Deletes all active sessions except the current one.
     ///
     /// After deletion, the sessions list is refreshed.
@@ -138,6 +217,21 @@ final class SettingsViewModel: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Sign Out
+
+    /// Signs out the current user.
+    func signOut() {
+        // TODO: Clear session via AuthService, navigate to auth
+        logger.info("User signed out")
+    }
+
+    /// Signs out from all devices.
+    func signOutAllDevices() {
+        Task {
+            await deleteAllSessions()
+        }
+    }
+
     // MARK: - Notification Preferences
 
     /// Loads the user's notification preferences.
@@ -150,6 +244,18 @@ final class SettingsViewModel: ObservableObject {
                 try await self.apiClient.request(.notificationsPreferences)
             }
             self.notificationPrefs = prefs
+
+            // Sync toggle states from preferences
+            self.pushNotificationsEnabled = prefs.pushEnabled
+            self.signalAlertsEnabled = prefs.signalAlerts
+            self.tradeAlertsEnabled = prefs.tradeAlerts
+            self.aiAlertsEnabled = prefs.aiAlerts
+            self.scannerAlertsEnabled = prefs.scannerAlerts
+            self.riskAlertsEnabled = prefs.riskAlerts
+            self.autoExecuteEnabled = prefs.autoExecuteEnabled
+            if let minConf = prefs.autoExecuteMinConfidence {
+                self.minConfidence = Double(minConf)
+            }
         } catch {
             logger.error("Failed to load notification preferences: \(error.localizedDescription)")
             errorMessage = "Failed to load notification preferences."

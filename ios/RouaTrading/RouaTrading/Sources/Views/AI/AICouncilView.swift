@@ -35,11 +35,11 @@ struct AICouncilView: View {
                 // Active briefs
                 SectionHeader(
                     title: "التحليلات النشطة",
-                    actionTitle: viewModel.briefs.isEmpty ? nil : "الكل",
+                    actionTitle: viewModel.councilBriefs.isEmpty ? nil : "الكل",
                     action: {}
                 )
 
-                if viewModel.briefs.isEmpty {
+                if viewModel.councilBriefs.isEmpty {
                     EmptyStateView(
                         icon: "brain.head.profile",
                         title: "لا توجد تحليلات",
@@ -47,7 +47,7 @@ struct AICouncilView: View {
                     )
                     .padding(.vertical, RouaSpacing.xxxl)
                 } else {
-                    ForEach(viewModel.briefs) { brief in
+                    ForEach(viewModel.councilBriefs) { brief in
                         BriefCard(
                             brief: brief,
                             isExpanded: expandedBriefId == brief.id,
@@ -96,24 +96,24 @@ struct AICouncilView: View {
     // MARK: - Session Status Card
 
     private var sessionStatusCard: some View {
-        GlassCard(glow: viewModel.councilSessionStatus?.isRunning == true ? .rouaProfit : nil) {
+        GlassCard(glow: viewModel.councilSession?.isRunning == true ? .rouaProfit : nil) {
             HStack(spacing: RouaSpacing.md) {
                 PulsingDot(
-                    status: viewModel.councilSessionStatus?.isRunning == true ? .active : .inactive,
+                    status: viewModel.councilSession?.isRunning == true ? .active : .inactive,
                     size: 12
                 )
 
                 VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                    Text(viewModel.councilSessionStatus?.isRunning == true ? "المجلس نشط" : "المجلس غير نشط")
+                    Text(viewModel.councilSession?.isRunning == true ? "المجلس نشط" : "المجلس غير نشط")
                         .rouaFont(.calloutBold, color: .rouaTextPrimary)
-                    if let lastSession = viewModel.councilSessionStatus?.lastSession {
+                    if let lastSession = viewModel.councilSession?.lastSession {
                         Text("آخر جلسة: \(lastSession)")
                             .rouaFont(.caption, color: .rouaTextTertiary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                if viewModel.councilSessionStatus?.isRunning == true {
+                if viewModel.councilSession?.isRunning == true {
                     Badge(text: "نشط", variant: .success)
                 }
             }
@@ -138,7 +138,7 @@ struct AICouncilView: View {
     private func triggerNewSession() {
         isTriggering = true
         let pairs = Array(selectedPairs)
-        viewModel.triggerCouncilSession(pairs: pairs.isEmpty ? nil : pairs)
+        Task { await viewModel.triggerCouncil(pairs: pairs.isEmpty ? ["BTCUSDT"] : pairs) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             isTriggering = false
             showNewSessionSheet = false

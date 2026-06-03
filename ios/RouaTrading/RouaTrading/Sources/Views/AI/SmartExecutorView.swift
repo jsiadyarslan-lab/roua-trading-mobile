@@ -58,7 +58,7 @@ struct SmartExecutorView: View {
         .alert("إيقاف طوارئ", isPresented: $showEmergencyConfirm) {
             Button("إلغاء", role: .cancel) {}
             Button("إيقاف فوري", role: .destructive) {
-                viewModel.emergencyStop()
+                Task { await viewModel.emergencyStop() }
             }
         } message: {
             Text("هل أنت متأكد؟ سيتم إغلاق جميع المراكز المفتوحة فوراً.")

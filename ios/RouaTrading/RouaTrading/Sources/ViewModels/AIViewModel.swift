@@ -84,6 +84,19 @@ final class AIViewModel: ObservableObject {
     /// Whether a council trigger is currently in progress.
     @Published var isTriggeringCouncil: Bool = false
 
+    /// Chat messages for the AI Coach interface.
+    @Published var coachMessages: [CoachMessage] = []
+
+    /// Whether the AI Coach is currently thinking/generating a response.
+    @Published var isCoachThinking: Bool = false
+
+    // MARK: - Computed
+
+    /// Briefs that are no longer active (history).
+    var briefHistory: [Brief] {
+        councilBriefs.filter { $0.status != .active }
+    }
+
     // MARK: - Dependencies
 
     private let apiClient = APIClient.shared
@@ -375,6 +388,26 @@ final class AIViewModel: ObservableObject {
         }
     }
 
+    // MARK: - AI Coach Message
+
+    /// Sends a user message to the AI Coach and appends the response.
+    ///
+    /// - Parameter text: The user's question or message.
+    func sendCoachMessage(_ text: String) {
+        let userMsg = CoachMessage(text: text, isUser: true, timestamp: Date.now.formatted())
+        coachMessages.append(userMsg)
+        isCoachThinking = true
+        Task {
+            await askCoach(question: text)
+            isCoachThinking = false
+            // The response gets added to coachAdvice, also add a simplified version to coachMessages
+            if let latest = coachAdvice.first {
+                let responseMsg = CoachMessage(text: latest.advice, isUser: false, timestamp: latest.createdAt)
+                coachMessages.append(responseMsg)
+            }
+        }
+    }
+
     // MARK: - Signals
 
     /// Loads active trading signals.
@@ -431,6 +464,20 @@ final class AIViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    // MARK: - AI Models
+
+    /// Dismisses a signal by removing it from the active list.
+    ///
+    /// - Parameter id: The signal identifier to dismiss.
+    func dismissSignal(id: String) {
+        activeSignals.removeAll { $0.id == id }
+    }
+
+    /// Signal history — non-active signals derived from activeSignals.
+    var signalHistory: [Signal] {
+        activeSignals.filter { $0.status != .active }
     }
 
     // MARK: - AI Models

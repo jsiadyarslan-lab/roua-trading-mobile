@@ -106,7 +106,7 @@ struct AICoachView: View {
                     icon: "chart.bar",
                     action: {
                         sendMessage("تحليل الأداء")
-                        viewModel.requestPerformanceAnalysis()
+                        Task { await viewModel.loadCoachPerformance() }
                     }
                 )
 

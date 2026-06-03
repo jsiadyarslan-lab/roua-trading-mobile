@@ -54,17 +54,17 @@ struct SignalsView: View {
                     ForEach(viewModel.activeSignals) { signal in
                         SignalCard(
                             signal: signal,
-                            onExecute: { viewModel.executeSignal(signal) },
-                            onDismiss: { viewModel.dismissSignal(signal.id) }
+                            onExecute: { Task { await viewModel.executeSignal(id: signal.id, credentialId: "") } },
+                            onDismiss: { viewModel.dismissSignal(id: signal.id) }
                         )
                     }
                 }
 
                 // Signal history
-                if !viewModel.signalHistory.isEmpty {
+                if !viewModel.activeSignals.filter { $0.status != .active }.isEmpty {
                     SectionHeader(title: "السجل")
 
-                    ForEach(viewModel.signalHistory) { signal in
+                    ForEach(viewModel.activeSignals.filter { $0.status != .active }) { signal in
                         SignalHistoryCard(signal: signal)
                     }
                     .opacity(0.7)
@@ -90,8 +90,8 @@ struct SignalsView: View {
     private func generateSignal() {
         guard !newSignalSymbol.isEmpty else { return }
         isGenerating = true
-        viewModel.generateSignal(symbol: newSignalSymbol.uppercased())
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task {
+            await viewModel.generateSignal(pair: newSignalSymbol.uppercased())
             isGenerating = false
             showNewSignalSheet = false
             newSignalSymbol = ""

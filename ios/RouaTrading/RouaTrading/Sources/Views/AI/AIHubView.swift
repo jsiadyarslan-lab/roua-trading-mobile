@@ -74,8 +74,8 @@ struct AIHubView: View {
                 if let error = viewModel.errorMessage {
                     ErrorBanner(
                         message: error,
-                        onRetry: { viewModel.retryLastAction() },
-                        onDismiss: { viewModel.clearError() }
+                        onRetry: { viewModel.loadAll() },
+                        onDismiss: { viewModel.errorMessage = nil }
                     )
                     .padding(.horizontal, RouaSpacing.screenPadding)
                     .padding(.top, RouaSpacing.md)

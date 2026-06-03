@@ -191,7 +191,6 @@ struct PositionsView: View {
 
     // MARK: - Open Positions Summary
 
-    @ViewBuilder
     private var openPositionsSummary: some View {
         let totalPnl = viewModel.positions.reduce(0) { $0 + $1.unrealizedPnl }
         let totalValue = viewModel.positions.reduce(0) {
@@ -199,7 +198,7 @@ struct PositionsView: View {
         }
         let pnlColor: Color = .rouaPnLColor(value: totalPnl)
 
-        GlassCard(glow: totalPnl >= 0 ? .rouaProfit : .rouaLoss) {
+        return GlassCard(glow: totalPnl >= 0 ? .rouaProfit : .rouaLoss) {
             HStack {
                 VStack(alignment: .leading, spacing: RouaSpacing.xs) {
                     Text("إجمالي PnL")  // Total PnL
@@ -271,7 +270,6 @@ struct PositionsView: View {
 
     // MARK: - Closed Trades Summary
 
-    @ViewBuilder
     private var closedTradesSummary: some View {
         let totalPnl = viewModel.closedTrades.reduce(0) { $0 + $1.realizedPnl }
         let wins = viewModel.closedTrades.filter { $0.isWinner }.count
@@ -279,7 +277,7 @@ struct PositionsView: View {
         let winRate = total > 0 ? Double(wins) / Double(total) : 0
         let pnlColor: Color = .rouaPnLColor(value: totalPnl)
 
-        GlassCard {
+        return GlassCard {
             HStack(spacing: RouaSpacing.lg) {
                 StatMini(
                     label: "إجمالي الأرباح",  // Total Realized

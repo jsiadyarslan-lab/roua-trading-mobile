@@ -61,7 +61,7 @@ struct SignalsView: View {
                 }
 
                 // Signal history
-                if !viewModel.activeSignals.filter { $0.status != .active }.isEmpty {
+                if !viewModel.activeSignals.filter({ $0.status != .active }).isEmpty {
                     SectionHeader(title: "السجل")
 
                     ForEach(viewModel.activeSignals.filter { $0.status != .active }) { signal in

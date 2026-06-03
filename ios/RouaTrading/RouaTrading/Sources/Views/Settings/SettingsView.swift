@@ -125,10 +125,9 @@ extension SettingsView {
         }
     }
 
-    @ViewBuilder
     private var tierBadge: some View {
         let tier = viewModel.user?.tier ?? .free
-        Badge(
+        return Badge(
             text: tier.displayName,
             variant: tier == .institutional ? .warning : tier == .pro ? .info : .neutral
         )

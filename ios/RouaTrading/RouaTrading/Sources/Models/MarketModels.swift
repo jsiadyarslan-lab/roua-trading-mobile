@@ -152,6 +152,12 @@ struct HeatmapItem: Codable, Identifiable, Hashable {
     var colorIntensity: Double {
         min(abs(changePct) / 10.0, 1.0)
     }
+
+    /// Formatted change percentage, e.g. "+2.35%".
+    var formattedChangePct: String {
+        let prefix = changePct >= 0 ? "+" : ""
+        return "\(prefix)\(String(format: "%.2f", changePct))%"
+    }
 }
 
 // MARK: - Market Overview

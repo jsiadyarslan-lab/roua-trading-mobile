@@ -263,6 +263,7 @@ extension NeuralLabView {
                 title: "الصفقات",
                 actionTitle: "\(trades.count)",
                 action: { }
+            )
 
             ForEach(trades.prefix(20)) { trade in
                 GlassCard {

@@ -153,9 +153,7 @@ struct NotificationsView: View {
                                 notificationRow(notification)
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
-                                            withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                Task<Void, Never> { await viewModel.deleteNotification(id: notification.id) }
-                                            }
+                                            Task<Void, Never> { await viewModel.deleteNotification(id: notification.id) }
                                         } label: {
                                             Label("حذف", systemImage: "trash")
                                         }
@@ -163,9 +161,7 @@ struct NotificationsView: View {
                                     .swipeActions(edge: .leading) {
                                         if !notification.isRead {
                                             Button {
-                                                withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                    Task<Void, Never> { await viewModel.markAsRead(ids: [notification.id]) }
-                                                }
+                                                Task<Void, Never> { await viewModel.markAsRead(ids: [notification.id]) }
                                             } label: {
                                                 Label("مقروء", systemImage: "checkmark")
                                             }

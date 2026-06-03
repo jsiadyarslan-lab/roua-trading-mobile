@@ -261,8 +261,8 @@ extension NeuralLabView {
         VStack(spacing: RouaSpacing.sm) {
             SectionHeader(
                 title: "الصفقات",
-                actionTitle: "\(trades.count)"
-            { }
+                actionTitle: "\(trades.count)",
+                action: { }
 
             ForEach(trades.prefix(20)) { trade in
                 GlassCard {

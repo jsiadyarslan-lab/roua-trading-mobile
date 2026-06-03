@@ -93,7 +93,7 @@ struct NotificationsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if viewModel.unreadCount > 0 {
                         Button {
-                            Task<Void> { await viewModel.markAllAsRead() }
+                            Task<Void, Never> { await viewModel.markAllAsRead() }
                         } label: {
                             Text("تحديد الكل كمقروء")
                                 .rouaFont(.captionBold, color: .rouaPrimary)
@@ -154,7 +154,7 @@ struct NotificationsView: View {
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
                                             withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                Task<Void> { await viewModel.deleteNotification(id: notification.id) }
+                                                Task<Void, Never> { await viewModel.deleteNotification(id: notification.id) }
                                             }
                                         } label: {
                                             Label("حذف", systemImage: "trash")
@@ -164,7 +164,7 @@ struct NotificationsView: View {
                                         if !notification.isRead {
                                             Button {
                                                 withAnimation(.easeOut(duration: RouaSpacing.animationFast)) {
-                                                    Task<Void> { await viewModel.markAsRead(ids: [notification.id]) }
+                                                    Task<Void, Never> { await viewModel.markAsRead(ids: [notification.id]) }
                                                 }
                                             } label: {
                                                 Label("مقروء", systemImage: "checkmark")
@@ -308,7 +308,7 @@ struct NotificationsView: View {
     private func handleNotificationTap(_ notification: RouaNotification) {
         // Mark as read
         if !notification.isRead {
-            Task<Void> { await viewModel.markAsRead(ids: [notification.id]) }
+            Task<Void, Never> { await viewModel.markAsRead(ids: [notification.id]) }
         }
 
         // Navigate based on type and action URL

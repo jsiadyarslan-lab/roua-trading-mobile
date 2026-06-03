@@ -111,9 +111,9 @@ struct PriceLineAnnotation: Identifiable, Equatable {
     /// Convert to LightweightCharts PriceLineOptions.
     func toPriceLineOptions() -> PriceLineOptions {
         PriceLineOptions(
-            price: .value(price),
-            color: color.toHex(),
-            lineWidth: lineWidth,
+            price: price,
+            color: ChartColor(rawValue: color.toHex()),
+            lineWidth: .one,
             lineStyle: lineStyle,
             axisLabelVisible: true,
             title: label
@@ -176,7 +176,7 @@ class ChartViewWrapper: UIView {
 
         let options = ChartOptions(
             layout: LayoutOptions(
-                background: SolidColor(type: .solid, color: ColorType.clear),
+                background: .solid(color: ChartColor(.clear)),
                 textColor: "rgba(255, 255, 255, 0.4)",
                 fontSize: 11,
                 fontFamily: "SF Mono"
@@ -260,25 +260,20 @@ class ChartViewWrapper: UIView {
 
         // ── Volume Histogram Series ──
         let volumeOptions = HistogramSeriesOptions(
-            priceFormat: PriceFormat(
-                type: .volume,
-                precision: 0,
-                minMove: 1
-            ),
-            priceScaleId: .overlay,
+            priceFormat: .builtIn(BuiltInPriceFormat(type: .volume, precision: nil, minMove: nil)),
+            priceScaleId: "overlay",
             lastValueVisible: false
         )
         let volumeSeriesView = chartView.addHistogramSeries(options: volumeOptions)
 
         // Configure volume price scale (bottom 20%)
         chartView.priceScale(
-            for: .overlay
-        )?.apply(options: PriceScaleOptions(
+            priceScaleId: "overlay"
+        )?.applyOptions(options: OverlayPriceScaleOptions(
             scaleMargins: PriceScaleMargins(
                 top: 0.8,
                 bottom: 0.0
-            ),
-            visible: false
+            )
         ))
 
         self.volumeSeries = volumeSeriesView
@@ -303,7 +298,7 @@ class ChartViewWrapper: UIView {
 
         let data = candles.map { candle -> CandlestickData in
             CandlestickData(
-                time: .utc(timestamp: candle.time),
+                time: .utc(timestamp: Double(candle.time)),
                 open: candle.open,
                 high: candle.high,
                 low: candle.low,
@@ -326,9 +321,9 @@ class ChartViewWrapper: UIView {
 
         let data = volumeData.map { point -> HistogramData in
             HistogramData(
-                time: .utc(timestamp: point.time),
+                time: .utc(timestamp: Double(point.time)),
                 value: point.value,
-                color: point.color.toVolumeHex()
+                color: ChartColor(rawValue: point.color.toVolumeHex())
             )
         }
 
@@ -340,7 +335,7 @@ class ChartViewWrapper: UIView {
         guard let series = candlestickSeries else { return }
 
         let data = CandlestickData(
-            time: .utc(timestamp: candle.time),
+            time: .utc(timestamp: Double(candle.time)),
             open: candle.open,
             high: candle.high,
             low: candle.low,
@@ -351,9 +346,9 @@ class ChartViewWrapper: UIView {
 
         // Also update volume
         let volumePoint = HistogramData(
-            time: .utc(timestamp: candle.time),
+            time: .utc(timestamp: Double(candle.time)),
             value: candle.volume,
-            color: candle.isBullish ? Color.rouaProfit.toVolumeHex() : Color.rouaLoss.toVolumeHex()
+            color: ChartColor(rawValue: candle.isBullish ? Color.rouaProfit.toVolumeHex() : Color.rouaLoss.toVolumeHex())
         )
         volumeSeries?.update(bar: volumePoint)
     }
@@ -364,7 +359,7 @@ class ChartViewWrapper: UIView {
 
         // Remove existing price lines
         for source in priceLineSources {
-            series.removePriceLine(source)
+            series.removePriceLine(line: source)
         }
         priceLineSources.removeAll()
 

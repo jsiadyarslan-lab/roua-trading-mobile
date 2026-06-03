@@ -13,6 +13,17 @@
 //   - Incremental update() for live candles (avoids full redraw)
 //   - Horizontal line price annotations (for entry/SL/TP levels)
 //   - fitContent on initial load only (not on every update)
+//
+// IMPORTANT: This file is written for LightweightChartsIOS v4.0.0 API.
+// Key v4 differences from v3:
+//   - ChartDelegate protocol (not ChartViewDelegate)
+//   - MouseEventParams for crosshair (not CrosshairMovedParameters)
+//   - HandleScrollOptions is an enum with .options(Options) case
+//   - handleScale uses TogglableOptions<HandleScaleOptions>
+//   - GridOptions uses verticalLines/horizontalLines (not vertLines/horizLines)
+//   - CrosshairLineOptions width is LineWidth enum (not Int)
+//   - PriceScaleApi.applyOptions takes PriceScaleOptions
+//   - priceScale() returns non-optional PriceScaleApi
 // =============================================================================
 
 import SwiftUI
@@ -105,10 +116,10 @@ struct PriceLineAnnotation: Identifiable, Equatable {
     let price: Double
     let color: Color
     let label: String
-    let lineWidth: UInt = 1
     let lineStyle: LineStyle = .dashed
 
     /// Convert to LightweightCharts PriceLineOptions.
+    /// v4: lineWidth is LineWidth enum, color is ChartColor (not String).
     func toPriceLineOptions() -> PriceLineOptions {
         PriceLineOptions(
             price: price,
@@ -124,7 +135,9 @@ struct PriceLineAnnotation: Identifiable, Equatable {
 // MARK: - Chart Coordinator
 
 /// Coordinator for crosshair move callbacks.
-class ChartCoordinator: NSObject, ChartViewDelegate {
+/// v4: Uses ChartDelegate protocol (not ChartViewDelegate).
+/// v4: Uses MouseEventParams (not CrosshairMovedParameters).
+class ChartCoordinator: NSObject, ChartDelegate {
 
     let onCrosshairMove: ((TimeInterval, Double?) -> Void)?
 
@@ -138,12 +151,19 @@ class ChartCoordinator: NSObject, ChartViewDelegate {
         self.previousVolumeData = []
     }
 
-    func chartView(
-        _ chartView: LightweightCharts,
-        crosshairMoved params: LightweightCharts.CrosshairMovedParameters
-    ) {
-        guard let point = params.point else { return }
-        onCrosshairMove?(point.time, point.price?.value)
+    // v4: ChartDelegate requires both didCrosshairMove and didClick
+    func didCrosshairMove(onChart chart: ChartApi, parameters: MouseEventParams) {
+        guard let eventTime = parameters.time else { return }
+        switch eventTime {
+        case .utc(let timestamp):
+            onCrosshairMove?(timestamp, nil)
+        default:
+            break
+        }
+    }
+
+    func didClick(onChart chart: ChartApi, parameters: MouseEventParams) {
+        // No action needed on click
     }
 }
 
@@ -171,7 +191,8 @@ class ChartViewWrapper: UIView {
     // MARK: - Setup
 
     /// Creates the chart widget with dark theme and configures all series.
-    func setupChart(delegate: ChartViewDelegate?) {
+    /// v4: setupChart takes ChartDelegate (not ChartViewDelegate).
+    func setupChart(delegate: ChartDelegate?) {
         backgroundColor = .clear
 
         let options = ChartOptions(
@@ -185,22 +206,22 @@ class ChartViewWrapper: UIView {
                 mode: .normal,
                 vertLine: CrosshairLineOptions(
                     color: "rgba(108, 92, 231, 0.5)",
-                    width: 1,
+                    width: .one,
                     style: .dashed,
                     labelBackgroundColor: "rgba(108, 92, 231, 0.9)"
                 ),
                 horzLine: CrosshairLineOptions(
                     color: "rgba(108, 92, 231, 0.5)",
-                    width: 1,
+                    width: .one,
                     style: .dashed,
                     labelBackgroundColor: "rgba(108, 92, 231, 0.9)"
                 )
             ),
             grid: GridOptions(
-                vertLines: GridLineOptions(
+                verticalLines: GridLineOptions(
                     color: "rgba(255, 255, 255, 0.03)"
                 ),
-                horzLines: GridLineOptions(
+                horizontalLines: GridLineOptions(
                     color: "rgba(255, 255, 255, 0.03)"
                 )
             ),
@@ -218,29 +239,27 @@ class ChartViewWrapper: UIView {
                 borderColor: "rgba(255, 255, 255, 0.08)",
                 scaleMargins: PriceScaleMargins(
                     top: 0.1,
-                    bottom: 0.25  // Leave space for volume
+                    bottom: 0.25
                 ),
                 entireTextOnly: true
             ),
             localization: LocalizationOptions(
-                timeFormatter: nil,
-                priceFormatter: nil,
                 dateFormat: "yyyy-MM-dd"
             ),
-            handleScroll: HandleScrollOptions(
+            handleScroll: .options(HandleScrollOptions.Options(
                 mouseWheel: true,
                 pressedMouseMove: true,
                 horzTouchDrag: true,
                 vertTouchDrag: false
-            ),
-            handleScale: HandleScaleOptions(
+            )),
+            handleScale: .options(HandleScaleOptions(
                 mouseWheel: true,
                 pinch: true,
-                axisPressedMouseMove: AxisPressedMouseMoveOptions(
+                axisPressedMouseMove: .options(AxisPressedMouseMoveOptions(
                     time: true,
                     price: true
-                )
-            )
+                ))
+            ))
         )
 
         let chartView = LightweightCharts(options: options)
@@ -267,9 +286,11 @@ class ChartViewWrapper: UIView {
         let volumeSeriesView = chartView.addHistogramSeries(options: volumeOptions)
 
         // Configure volume price scale (bottom 20%)
+        // v4: priceScale() returns non-optional PriceScaleApi
+        // v4: applyOptions takes PriceScaleOptions (not OverlayPriceScaleOptions)
         chartView.priceScale(
             priceScaleId: "overlay"
-        )?.applyOptions(options: OverlayPriceScaleOptions(
+        ).applyOptions(options: PriceScaleOptions(
             scaleMargins: PriceScaleMargins(
                 top: 0.8,
                 bottom: 0.0
@@ -293,6 +314,7 @@ class ChartViewWrapper: UIView {
     // MARK: - Data Methods
 
     /// Sets the full historical candle data. Called on initial load or timeframe change.
+    /// v4: Time.utc(timestamp:) expects Double, CandleData.time is Int → cast required.
     func setCandleData(_ candles: [CandleData]) {
         guard let series = candlestickSeries else { return }
 
@@ -316,6 +338,7 @@ class ChartViewWrapper: UIView {
     }
 
     /// Sets the full volume histogram data.
+    /// v4: HistogramData.color is ChartColor? (not String), created via ChartColor(rawValue:).
     func setVolumeData(_ volumeData: [VolumeDataPoint]) {
         guard let series = volumeSeries else { return }
 
@@ -331,6 +354,7 @@ class ChartViewWrapper: UIView {
     }
 
     /// Updates the live (current) candle incrementally instead of full setData.
+    /// v4: Time.utc(timestamp:) expects Double, color uses ChartColor(rawValue:).
     func updateLiveCandle(_ candle: CandleData) {
         guard let series = candlestickSeries else { return }
 
@@ -354,6 +378,7 @@ class ChartViewWrapper: UIView {
     }
 
     /// Adds or updates horizontal price line annotations.
+    /// v4: Uses series.createPriceLine(options:) and series.removePriceLine(line:).
     func setPriceLineAnnotations(_ annotations: [PriceLineAnnotation]) {
         guard let series = candlestickSeries else { return }
 

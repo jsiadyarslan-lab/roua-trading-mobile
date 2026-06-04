@@ -528,11 +528,12 @@ final class AuthService: ObservableObject {
     }
 
     /// Performs an `ASAuthorizationController` request using async/await.
+    /// Generic delegate matches the continuation type to avoid CheckedContinuation invariance issues.
     private func performAuthorization<T: ASAuthorizationCredential>(
         controller: ASAuthorizationController
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
-            let delegate = AuthorizationDelegate(continuation: continuation)
+            let delegate = AuthorizationDelegate<T>(continuation: continuation)
             // Retain the delegate until the controller completes
             objc_setAssociatedObject(controller, "authDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
             delegate.controller = controller
@@ -545,12 +546,13 @@ final class AuthService: ObservableObject {
 // MARK: - Authorization Delegate
 
 /// A delegate that bridges `ASAuthorizationController` callbacks to async/await.
-private class AuthorizationDelegate: NSObject, ASAuthorizationControllerDelegate {
+/// Generic over the expected credential type to match CheckedContinuation's type parameter.
+private class AuthorizationDelegate<T: ASAuthorizationCredential>: NSObject, ASAuthorizationControllerDelegate {
 
-    private let continuation: CheckedContinuation<ASAuthorizationCredential, Error>
+    private let continuation: CheckedContinuation<T, Error>
     weak var controller: ASAuthorizationController?
 
-    init(continuation: CheckedContinuation<ASAuthorizationCredential, Error>) {
+    init(continuation: CheckedContinuation<T, Error>) {
         self.continuation = continuation
     }
 
@@ -558,7 +560,13 @@ private class AuthorizationDelegate: NSObject, ASAuthorizationControllerDelegate
         controller: ASAuthorizationController,
         didCompleteWithAuthorization authorization: ASAuthorization
     ) {
-        continuation.resume(returning: authorization.credential)
+        guard let credential = authorization.credential as? T else {
+            continuation.resume(throwing: AuthError.credentialCreationFailed(
+                NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unexpected credential type"])
+            ))
+            return
+        }
+        continuation.resume(returning: credential)
     }
 
     func authorizationController(

@@ -24,6 +24,8 @@
 //   - CrosshairLineOptions width is LineWidth enum (not Int)
 //   - PriceScaleApi.applyOptions takes PriceScaleOptions
 //   - priceScale() returns non-optional PriceScaleApi
+//   - Swift init args must match exact parameter order from the library
+//   - Struct arrays use != (not !== which only works with classes)
 // =============================================================================
 
 import SwiftUI
@@ -32,10 +34,14 @@ import LightweightCharts
 // MARK: - Volume Data Point
 
 /// Data point for the volume histogram overlay on the chart.
-struct VolumeDataPoint {
+struct VolumeDataPoint: Equatable {
     let time: Int
     let value: Double
     let color: Color
+
+    static func == (lhs: VolumeDataPoint, rhs: VolumeDataPoint) -> Bool {
+        lhs.time == rhs.time && lhs.value == rhs.value
+    }
 }
 
 // MARK: - Chart View
@@ -78,15 +84,15 @@ struct ChartView: UIViewRepresentable {
     }
 
     func updateUIView(_ wrapper: ChartViewWrapper, context: Context) {
-        // Update candle data
-        if candles !== context.coordinator.previousCandles {
+        // Update candle data (use != for structs, !== only works with classes)
+        if candles != context.coordinator.previousCandles {
             wrapper.setCandleData(candles)
             context.coordinator.previousCandles = candles
             context.coordinator.hasInitializedData = true
         }
 
         // Update volume data
-        if volumeData !== context.coordinator.previousVolumeData {
+        if volumeData != context.coordinator.previousVolumeData {
             wrapper.setVolumeData(volumeData)
             context.coordinator.previousVolumeData = volumeData
         }
@@ -195,12 +201,33 @@ class ChartViewWrapper: UIView {
     func setupChart(delegate: ChartDelegate?) {
         backgroundColor = .clear
 
+        // ChartOptions init parameter order: width, height, watermark, layout,
+        // leftPriceScale, rightPriceScale, overlayPriceScales, timeScale,
+        // crosshair, grid, localization, handleScroll, handleScale, ...
         let options = ChartOptions(
             layout: LayoutOptions(
                 background: .solid(color: ChartColor(.clear)),
                 textColor: "rgba(255, 255, 255, 0.4)",
                 fontSize: 11,
                 fontFamily: "SF Mono"
+            ),
+            rightPriceScale: PriceScaleOptions(
+                scaleMargins: PriceScaleMargins(
+                    top: 0.1,
+                    bottom: 0.25
+                ),
+                borderColor: "rgba(255, 255, 255, 0.08)",
+                entireTextOnly: true
+            ),
+            timeScale: TimeScaleOptions(
+                rightOffset: 5,
+                barSpacing: 8,
+                minBarSpacing: 2,
+                fixLeftEdge: false,
+                fixRightEdge: false,
+                borderColor: "rgba(255, 255, 255, 0.08)",
+                timeVisible: true,
+                secondsVisible: false
             ),
             crosshair: CrosshairOptions(
                 mode: .normal,
@@ -225,24 +252,6 @@ class ChartViewWrapper: UIView {
                     color: "rgba(255, 255, 255, 0.03)"
                 )
             ),
-            timeScale: TimeScaleOptions(
-                timeVisible: true,
-                secondsVisible: false,
-                borderColor: "rgba(255, 255, 255, 0.08)",
-                rightOffset: 5,
-                barSpacing: 8,
-                minBarSpacing: 2,
-                fixLeftEdge: false,
-                fixRightEdge: false
-            ),
-            rightPriceScale: PriceScaleOptions(
-                borderColor: "rgba(255, 255, 255, 0.08)",
-                scaleMargins: PriceScaleMargins(
-                    top: 0.1,
-                    bottom: 0.25
-                ),
-                entireTextOnly: true
-            ),
             localization: LocalizationOptions(
                 dateFormat: "yyyy-MM-dd"
             ),
@@ -266,6 +275,8 @@ class ChartViewWrapper: UIView {
         chartView.delegate = delegate
 
         // ── Candlestick Series ──
+        // CandlestickSeriesOptions init order: lastValueVisible, title, priceScaleId,
+        // visible, priceLineVisible, ..., upColor, downColor, ..., wickUpColor, wickDownColor
         let candleOptions = CandlestickSeriesOptions(
             upColor: "#00C853",
             downColor: "#FF1744",
@@ -278,10 +289,12 @@ class ChartViewWrapper: UIView {
         self.candlestickSeries = candleSeries
 
         // ── Volume Histogram Series ──
+        // HistogramSeriesOptions init order: lastValueVisible, title, priceScaleId,
+        // visible, priceLineVisible, ..., priceFormat, ..., color, base
         let volumeOptions = HistogramSeriesOptions(
-            priceFormat: .builtIn(BuiltInPriceFormat(type: .volume, precision: nil, minMove: nil)),
+            lastValueVisible: false,
             priceScaleId: "overlay",
-            lastValueVisible: false
+            priceFormat: .builtIn(BuiltInPriceFormat(type: .volume, precision: nil, minMove: nil))
         )
         let volumeSeriesView = chartView.addHistogramSeries(options: volumeOptions)
 

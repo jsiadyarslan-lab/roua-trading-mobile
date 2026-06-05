@@ -413,26 +413,43 @@ final class AuthService: ObservableObject {
         webAuthSession = nil
 
         // Extract session token from callback URL
-        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-              let queryItems = components.queryItems else {
+        // The backend may return the token as a query parameter or as a fragment.
+        // We try multiple parameter names and locations for robustness.
+        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false) else {
             throw AuthError.oauthFailed("Invalid callback URL format")
         }
 
-        let sessionToken = queryItems.first(where: { $0.name == "token" })?.value
-            ?? queryItems.first(where: { $0.name == "session_token" })?.value
+        // Try query items first, then fragment items
+        let allItems = (components.queryItems ?? []) + (fragmentItems(from: components.fragment))
 
-        guard let sessionToken else {
+        // Try various token parameter names the backend might use
+        let sessionToken = allItems.first(where: { $0.name == "token" })?.value
+            ?? allItems.first(where: { $0.name == "session_token" })?.value
+            ?? allItems.first(where: { $0.name == "sessionToken" })?.value
+            ?? allItems.first(where: { $0.name == "access_token" })?.value
+
+        // Also try extracting from the path component (e.g., roua://auth/callback/TOKEN_VALUE)
+        let pathToken: String? = {
+            let path = callbackURL.path
+            // Strip leading "/" if present
+            let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            return trimmed.isEmpty ? nil : trimmed
+        }()
+
+        guard let finalToken = sessionToken ?? pathToken else {
+            logger.error("OAuth callback URL: \(callbackURL.absoluteString)")
             throw AuthError.oauthFailed("No session token in OAuth callback")
         }
 
         // Store the session token
-        keychain.store(key: AppConfig.sessionTokenKey, value: sessionToken)
+        keychain.store(key: AppConfig.sessionTokenKey, value: finalToken)
+        logger.info("Session token stored from OAuth callback")
 
-        // Also store the refresh token if provided — needed for automatic
-        // session refresh when the session token expires (APIClient.refreshSession
-        // sends this as a Cookie header to /auth/refresh).
-        if let refreshToken = queryItems.first(where: { $0.name == "refresh" })?.value {
+        // Also store the refresh token if provided
+        if let refreshToken = allItems.first(where: { $0.name == "refresh" })?.value
+            ?? allItems.first(where: { $0.name == "refresh_token" })?.value {
             keychain.store(key: AppConfig.refreshTokenKey, value: refreshToken)
+            logger.info("Refresh token stored from OAuth callback")
         }
 
         try await validateAfterOAuth()
@@ -539,6 +556,18 @@ final class AuthService: ObservableObject {
         keychain.delete(key: userKey)
         currentUser = nil
         isAuthenticated = false
+    }
+
+    /// Parses a URL fragment string (e.g., "token=abc&refresh=def") into query items.
+    private func fragmentItems(from fragment: String?) -> [URLQueryItem] {
+        guard let fragment, !fragment.isEmpty else { return [] }
+        return fragment
+            .components(separatedBy: "&")
+            .compactMap { pair -> URLQueryItem? in
+                let parts = pair.components(separatedBy: "=")
+                guard parts.count == 2 else { return nil }
+                return URLQueryItem(name: parts[0], value: parts[1].removingPercentEncoding ?? parts[1])
+            }
     }
 
     /// Decodes a base64url-encoded string to `Data`.

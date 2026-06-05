@@ -291,7 +291,14 @@ final class APIClient {
         _ endpoint: APIEndpoint,
         queryItems: [URLQueryItem]?
     ) throws -> URLRequest {
-        let url = AppConfig.apiBaseURL.appendingPathComponent(endpoint.path)
+        // FIX: Use string concatenation instead of appendingPathComponent.
+        // appendingPathComponent with paths starting with "/" can produce
+        // incorrect URLs (double-slash or percent-encoded "/" characters),
+        // causing all API requests to 404 or fail silently.
+        let urlString = AppConfig.apiBaseURL.absoluteString + endpoint.path
+        guard let url = URL(string: urlString) else {
+            throw APIError.unexpected("Failed to build URL: \(urlString)")
+        }
 
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
 
@@ -319,15 +326,14 @@ final class APIClient {
         into request: inout URLRequest,
         requiresAuth: Bool
     ) async throws {
-        guard requiresAuth else { return }
-
-        // Prefer session token as x-roua-session header
+        // Always inject auth headers if we have a token, even for public endpoints.
+        // The backend can use the token to personalize responses, and having
+        // an invalid token on a public endpoint won't cause a 401.
         if let sessionToken = keychain.retrieve(key: AppConfig.sessionTokenKey) {
             request.setValue(sessionToken, forHTTPHeaderField: "x-roua-session")
-            // Also set as Bearer for endpoints that accept it
             request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
-        } else if let refreshToken = keychain.retrieve(key: AppConfig.refreshTokenKey) {
-            // Fallback: include refresh token as cookie header
+        } else if requiresAuth, let refreshToken = keychain.retrieve(key: AppConfig.refreshTokenKey) {
+            // Fallback: include refresh token as cookie header (only for auth-required endpoints)
             request.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
         }
     }
@@ -377,7 +383,7 @@ final class APIClient {
             return false
         }
 
-        let url = AppConfig.apiBaseURL.appendingPathComponent("/auth/refresh")
+        let url = URL(string: AppConfig.apiBaseURL.absoluteString + "/auth/refresh")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

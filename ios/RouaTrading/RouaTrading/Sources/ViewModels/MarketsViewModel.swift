@@ -105,7 +105,10 @@ final class MarketsViewModel: ObservableObject {
             self.scanResults = results
         } catch {
             logger.error("Failed to load scanner: \(error.localizedDescription)")
-            errorMessage = "Failed to load scanner results."
+            // Don't show error if we have existing data
+            if scanResults.isEmpty {
+                errorMessage = "تعذر تحميل نتائج الماسح. حاول مرة أخرى."
+            }
         }
     }
 
@@ -127,7 +130,7 @@ final class MarketsViewModel: ObservableObject {
             self.heatmapData = items
         } catch {
             logger.error("Failed to load heatmap: \(error.localizedDescription)")
-            errorMessage = "Failed to load heatmap data."
+            // Don't overwrite error from scanner
         }
     }
 
@@ -145,7 +148,6 @@ final class MarketsViewModel: ObservableObject {
             self.marketOverview = overview
         } catch {
             logger.error("Failed to load market overview: \(error.localizedDescription)")
-            errorMessage = "Failed to load market overview."
         }
     }
 
@@ -190,7 +192,7 @@ final class MarketsViewModel: ObservableObject {
             self.newsItems = news
         } catch {
             logger.error("Failed to load news: \(error.localizedDescription)")
-            errorMessage = "Failed to load news."
+            // Don't overwrite error from other loaders
         }
     }
 

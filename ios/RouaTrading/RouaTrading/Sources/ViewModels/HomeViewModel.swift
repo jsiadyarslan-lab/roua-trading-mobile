@@ -124,9 +124,9 @@ final class HomeViewModel: ObservableObject {
             self.topLosers = overview.topLosers
         } catch {
             logger.error("Failed to load market overview: \(error.localizedDescription)")
-            // Don't overwrite errorMessage from other concurrent requests
-            if errorMessage == nil {
-                errorMessage = "Failed to load market overview."
+            // If we have cached data, don't show error — just keep existing data
+            if marketOverview == nil && errorMessage == nil {
+                errorMessage = "تعذر تحميل بيانات السوق. اسحب للتحديث."
             }
         }
     }
@@ -143,9 +143,8 @@ final class HomeViewModel: ObservableObject {
             self.recentNews = news
         } catch {
             logger.error("Failed to load news: \(error.localizedDescription)")
-            if errorMessage == nil {
-                errorMessage = "Failed to load news."
-            }
+            // Don't overwrite errorMessage from other concurrent requests
+            // News is supplementary — not critical for dashboard
         }
     }
 
@@ -156,9 +155,7 @@ final class HomeViewModel: ObservableObject {
             self.activeSignals = signals
         } catch {
             logger.error("Failed to load signals: \(error.localizedDescription)")
-            if errorMessage == nil {
-                errorMessage = "Failed to load signals."
-            }
+            // Signals may be empty for new users — not an error worth showing
         }
     }
 
@@ -169,7 +166,15 @@ final class HomeViewModel: ObservableObject {
             self.positionsSummary = summary
         } catch {
             logger.error("Failed to load positions: \(error.localizedDescription)")
-            // Positions may be empty for new users — not necessarily an error worth showing
+            // Positions may be empty for new users — create a default summary
+            if positionsSummary == nil {
+                self.positionsSummary = PositionSummary(
+                    totalUnrealizedPnl: 0,
+                    totalPositionValue: 0,
+                    positionCount: 0,
+                    positions: []
+                )
+            }
         }
     }
 
@@ -180,6 +185,19 @@ final class HomeViewModel: ObservableObject {
             self.portfolioSummary = portfolio
         } catch {
             logger.error("Failed to load portfolio: \(error.localizedDescription)")
+            // Create a default portfolio summary so the UI shows $0.00 instead of nothing
+            if portfolioSummary == nil {
+                self.portfolioSummary = PortfolioSummary(
+                    totalBalance: 0,
+                    availableBalance: 0,
+                    totalPnl: 0,
+                    totalPnlPct: 0,
+                    unrealizedPnl: 0,
+                    marginUsed: 0,
+                    marginAvailable: 0,
+                    positions: []
+                )
+            }
         }
     }
 }

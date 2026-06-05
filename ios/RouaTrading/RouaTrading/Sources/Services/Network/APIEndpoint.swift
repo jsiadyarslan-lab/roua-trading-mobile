@@ -611,23 +611,71 @@ extension APIEndpoint {
     /// Whether the endpoint requires an authenticated session.
     ///
     /// Endpoints that are part of the authentication flow itself or are public
-    /// health checks do not require auth.
+    /// health checks do not require auth. Many market data endpoints are also
+    /// public — marking them correctly avoids sending invalid tokens on public
+    /// routes, which can cause 401 errors even on public endpoints.
     var requiresAuth: Bool {
         switch self {
-        // Public / auth flow endpoints — no auth required
+        // ── Auth flow — no auth required ──
         case .authRegister,
              .authChallenge,
              .authVerify,
              .authRefresh,
              .authRecover,
              .health,
-             .diagnosticModules,
-             .agentHealth,
-             .agentPublicStatus,
-             .engineHealth:
+             .diagnosticModules:
+
             return false
 
-        // Everything else requires auth
+        // ── Scanner — all public ──
+        case .scannerScan,
+             .scannerHeatmap,
+             .scannerAnalysis,
+             .scannerMultiTF,
+             .scannerOverview:
+            return false
+
+        // ── Exchange — all public ──
+        case .exchangeQuote,
+             .exchangeHistory,
+             .exchangeAdapters:
+            return false
+
+        // ── News — all public ──
+        case .newsLatest,
+             .newsFeed,
+             .newsSentiment:
+            return false
+
+        // ── AI — models and diagnostics are public ──
+        case .aiModels,
+             .aiDiagnose:
+            return false
+
+        // ── Strategic Council — briefs are public ──
+        case .councilBriefs,
+             .councilActiveBriefs,
+             .councilBriefHistory,
+             .councilBriefsCount,
+             .councilSessionStatus,
+             .councilSessionLast:
+            return false
+
+        // ── Smart Executor — status is public ──
+        case .executorStatus,
+             .executorDebug:
+            return false
+
+        // ── Agent — health and public status ──
+        case .agentHealth,
+             .agentPublicStatus:
+            return false
+
+        // ── Engine — health ──
+        case .engineHealth:
+            return false
+
+        // ── Everything else requires auth ──
         default:
             return true
         }

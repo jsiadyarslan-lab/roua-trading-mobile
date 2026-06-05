@@ -240,6 +240,7 @@ private struct BriefCard: View {
                 }
         }
     }
+    } // end body
 
     // MARK: - Computed
 

@@ -69,6 +69,13 @@ final class AuthViewModel: ObservableObject {
         self.isAuthenticated = authService.isAuthenticated
         self.currentUser = nil // Will be populated by validateSession()
 
+        // Start as loading so the RootView state machine works correctly.
+        // If isLoading starts as false, a fast validateSession() that completes
+        // in the same run-loop iteration causes SwiftUI to batch the
+        // false → true → false transition, so .onChange never fires and
+        // the loading screen gets stuck forever.
+        self.isLoading = true
+
         // Observe AuthService published properties to stay in sync
         observeAuthService()
     }

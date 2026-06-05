@@ -149,16 +149,18 @@ struct BiometricAuth {
                 throw BiometricAuthError.cancelled
             case .userFallback:
                 throw BiometricAuthError.fallbackSelected
-            case .biometryLockout:
+            case .biometryLockout, .touchIDLockout:
                 throw BiometricAuthError.lockedOut
-            case .biometryNotEnrolled:
+            case .biometryNotEnrolled, .touchIDNotEnrolled:
                 throw BiometricAuthError.notEnrolled
-            case .biometryNotAvailable:
+            case .biometryNotAvailable, .touchIDNotAvailable:
                 throw BiometricAuthError.notAvailable
             case .appCancel, .systemCancel:
                 throw BiometricAuthError.cancelled
             case .passcodeNotSet:
                 throw BiometricAuthError.notAvailable
+            case .notInteractive:
+                throw BiometricAuthError.cancelled
             case .invalidContext:
                 throw BiometricAuthError.unknown(laError)
             @unknown default:

@@ -176,7 +176,6 @@ final class CacheManager {
 
     /// Removes all expired entries from the cache.
     func cleanupExpired() {
-        let now = Date()
         var removedCount = 0
 
         for (key, entry) in storage {

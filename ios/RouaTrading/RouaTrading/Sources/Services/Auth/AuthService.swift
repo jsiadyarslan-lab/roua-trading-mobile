@@ -249,7 +249,7 @@ final class AuthService: ObservableObject {
             id: credential.credentialID.base64EncodedString(),
             rawId: credential.credentialID.base64EncodedString(),
             response: WebAuthnVerificationResponse(
-                clientDataJSON: credential.clientDataJSON.base64EncodedString(),
+                clientDataJSON: credential.rawClientDataJSON.base64EncodedString(),
                 attestationObject: credential.attestationObject?.base64EncodedString(),
                 authenticatorData: nil,
                 signature: nil,
@@ -325,9 +325,9 @@ final class AuthService: ObservableObject {
             id: assertion.credentialID.base64EncodedString(),
             rawId: assertion.credentialID.base64EncodedString(),
             response: WebAuthnVerificationResponse(
-                clientDataJSON: assertion.clientDataJSON.base64EncodedString(),
+                clientDataJSON: assertion.rawClientDataJSON.base64EncodedString(),
                 attestationObject: nil,
-                authenticatorData: assertion.authenticatorData.base64EncodedString(),
+                authenticatorData: assertion.rawAuthenticatorData.base64EncodedString(),
                 signature: assertion.signature.base64EncodedString(),
                 userHandle: assertion.userID?.base64EncodedString()
             ),

@@ -206,7 +206,7 @@ class ChartViewWrapper: UIView {
         // crosshair, grid, localization, handleScroll, handleScale, ...
         let options = ChartOptions(
             layout: LayoutOptions(
-                background: .solid(color: ChartColor(.clear)),
+                background: .solid(color: ChartColor(rawValue: "rgba(0, 0, 0, 0)")),
                 textColor: "rgba(255, 255, 255, 0.4)",
                 fontSize: 11,
                 fontFamily: "SF Mono"

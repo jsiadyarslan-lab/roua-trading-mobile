@@ -89,21 +89,89 @@ struct OHLCV: Codable, Identifiable, Hashable {
 // MARK: - Scanner Result
 
 /// A single result from the market scanner.
+///
+/// The backend `/scanner/overview` and `/scanner/heatmap` endpoints return items
+/// with field names that differ from the original model expectations.  CodingKeys
+/// map the wire names to the Swift property names so decoding succeeds while
+/// keeping the public API clean.
 struct ScannerResult: Codable, Identifiable, Hashable {
     var id: String { symbol }
 
     let symbol: String
     let name: String?
     let price: Double
+    /// Absolute price change (may be 0 if the backend omits it).
     let change: Double
+    /// Percentage change.  Backend sends `changePercent`.
     let changePct: Double
     let volume: Double
+    /// Signal direction.  Backend sends `direction` as a `SignalDirection` raw value.
     let signal: SignalDirection
-    /// Signal strength 0–100.
+    /// Signal strength.  Backend sends `technicalScore` (may be negative).
     let strength: Int
+    /// Technical indicators map (RSI, MACD, etc.).  Optional – present in
+    /// `/scanner/strongest-signals` but not in `/scanner/overview` top-level items.
     let indicators: [String: Double]?
-    let timeframe: String
+    /// Timeframe string.  Optional – not always present in overview items.
+    let timeframe: String?
     let category: MarketCategory
+    /// Market cap.  Backend sends `marketCap` (nullable).
+    let marketCap: Double?
+
+    // ---- Coding Keys (backend → Swift) ----
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case name
+        case price
+        case change
+        case changePct = "changePercent"
+        case volume
+        case signal = "direction"
+        case strength = "technicalScore"
+        case indicators
+        case timeframe
+        case category
+        case marketCap
+    }
+
+    // ---- Custom decoder with fallback defaults for optional fields ----
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        symbol    = try container.decode(String.self, forKey: .symbol)
+        name      = try container.decodeIfPresent(String.self, forKey: .name)
+        price     = try container.decode(Double.self, forKey: .price)
+        change    = try container.decodeIfPresent(Double.self, forKey: .change) ?? 0
+        changePct = try container.decode(Double.self, forKey: .changePct)
+        volume    = try container.decode(Double.self, forKey: .volume)
+        signal    = try container.decode(SignalDirection.self, forKey: .signal)
+        strength  = try container.decode(Int.self, forKey: .strength)
+        indicators = try container.decodeIfPresent([String: Double].self, forKey: .indicators)
+        timeframe  = try container.decodeIfPresent(String.self, forKey: .timeframe)
+        category   = try container.decode(MarketCategory.self, forKey: .category)
+        marketCap  = try container.decodeIfPresent(Double.self, forKey: .marketCap)
+    }
+
+    // ---- Direct memberwise init ----
+
+    init(symbol: String, name: String? = nil, price: Double, change: Double = 0,
+         changePct: Double, volume: Double, signal: SignalDirection, strength: Int,
+         indicators: [String: Double]? = nil, timeframe: String? = nil,
+         category: MarketCategory, marketCap: Double? = nil) {
+        self.symbol = symbol
+        self.name = name
+        self.price = price
+        self.change = change
+        self.changePct = changePct
+        self.volume = volume
+        self.signal = signal
+        self.strength = strength
+        self.indicators = indicators
+        self.timeframe = timeframe
+        self.category = category
+        self.marketCap = marketCap
+    }
 
     // ---- Computed helpers ----
 
@@ -120,7 +188,8 @@ struct ScannerResult: Codable, Identifiable, Hashable {
 
     /// Strength bucket label for UI.
     var strengthLabel: String {
-        switch strength {
+        let absStrength = abs(strength)
+        switch absStrength {
         case 80...100: return "Very Strong"
         case 60..<80:  return "Strong"
         case 40..<60:  return "Moderate"
@@ -133,6 +202,9 @@ struct ScannerResult: Codable, Identifiable, Hashable {
 // MARK: - Heatmap Item
 
 /// A single tile on the market heatmap.
+///
+/// The `/scanner/heatmap` endpoint returns the same shape as `ScannerResult`
+/// so this type reuses the same CodingKeys mapping.
 struct HeatmapItem: Codable, Identifiable, Hashable {
     var id: String { symbol }
 
@@ -144,6 +216,39 @@ struct HeatmapItem: Codable, Identifiable, Hashable {
     let volume: Double
     let category: MarketCategory
     let marketCap: Double?
+    /// Signal direction from backend `direction` field.
+    let direction: SignalDirection
+    /// Technical score from backend `technicalScore` field.
+    let technicalScore: Int
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case symbol
+        case name
+        case price
+        case change
+        case changePct = "changePercent"
+        case volume
+        case category
+        case marketCap
+        case direction
+        case technicalScore
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        symbol         = try container.decode(String.self, forKey: .symbol)
+        name           = try container.decodeIfPresent(String.self, forKey: .name)
+        price          = try container.decode(Double.self, forKey: .price)
+        change         = try container.decodeIfPresent(Double.self, forKey: .change) ?? 0
+        changePct      = try container.decode(Double.self, forKey: .changePct)
+        volume         = try container.decode(Double.self, forKey: .volume)
+        category       = try container.decode(MarketCategory.self, forKey: .category)
+        marketCap      = try container.decodeIfPresent(Double.self, forKey: .marketCap)
+        direction      = try container.decodeIfPresent(SignalDirection.self, forKey: .direction) ?? .neutral
+        technicalScore = try container.decodeIfPresent(Int.self, forKey: .technicalScore) ?? 0
+    }
 
     /// Relative size weight for heatmap rendering (market-cap based).
     var sizeWeight: Double { marketCap ?? volume }
@@ -163,16 +268,68 @@ struct HeatmapItem: Codable, Identifiable, Hashable {
 // MARK: - Market Overview
 
 /// Top-level market summary including sentiment indices and movers.
+///
+/// The backend `/scanner/overview` returns:
+/// ```json
+/// {
+///   "totalScanned": 10,
+///   "bullishCount": 2,
+///   "bearishCount": 8,
+///   "neutralCount": 0,
+///   "topGainers": [...],
+///   "topLosers": [...],
+///   "strongestSignals": [...],
+///   "marketSentiment": "BEARISH",
+///   "sentimentScore": -20,
+///   "timestamp": "..."
+/// }
+/// ```
 struct MarketOverview: Codable {
+    let totalScanned: Int?
+    let bullishCount: Int?
+    let bearishCount: Int?
+    let neutralCount: Int?
+    let topGainers: [ScannerResult]
+    let topLosers: [ScannerResult]
+    /// Backend sends `strongestSignals` — we expose it as `strongestSignals`.
+    let strongestSignals: [ScannerResult]?
+    /// Overall market sentiment, e.g. "BEARISH" or "BULLISH".
+    let marketSentiment: String?
+    /// Numeric sentiment score (negative = bearish, positive = bullish).
+    let sentimentScore: Double?
+    let timestamp: String?
+
+    // Legacy optional fields – may be added by the backend in the future.
     let totalMarketCap: Double?
     let totalVolume: Double?
     let btcDominance: Double?
     let fearGreedIndex: Int?
     let fearGreedLabel: String?
     let activeCryptos: Int?
-    let topGainers: [ScannerResult]
-    let topLosers: [ScannerResult]
-    let trending: [ScannerResult]
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case totalScanned
+        case bullishCount
+        case bearishCount
+        case neutralCount
+        case topGainers
+        case topLosers
+        case strongestSignals
+        case marketSentiment
+        case sentimentScore
+        case timestamp
+        case totalMarketCap
+        case totalVolume
+        case btcDominance
+        case fearGreedIndex
+        case fearGreedLabel
+        case activeCryptos
+    }
+
+    /// Computed: trending = strongestSignals (backward compat alias).
+    var trending: [ScannerResult] { strongestSignals ?? [] }
 
     /// Fear & Greed classification for UI coloring.
     var fearGreedCategory: String {

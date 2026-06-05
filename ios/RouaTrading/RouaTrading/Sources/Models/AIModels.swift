@@ -109,18 +109,94 @@ struct ModelVote: Codable, Identifiable, Hashable {
 // MARK: - Brief
 
 /// An AI-generated actionable brief for a symbol.
+///
+/// The backend `/strategic-council/briefs/active` returns:
+/// ```json
+/// {
+///   "id": "...",
+///   "pair": "DOGE/USDT",
+///   "direction": "SELL",
+///   "entryPrice": 0.08296,
+///   "stopLoss": 0.08395552,
+///   "takeProfit": 0.08096896,
+///   "confidence": 82,
+///   "timeframe": "M30",
+///   "issuedAt": "...",
+///   "expiresAt": "...",
+///   "isActive": true,
+///   "strictRules": { ... },
+///   "analysis": "...",
+///   "models": [...]
+/// }
+/// ```
 struct Brief: Codable, Identifiable, Hashable {
     let id: String
+    /// Backend sends `pair` instead of `symbol`.
     let symbol: String
     let direction: BriefDirection
     /// Confidence 0–100.
     let confidence: Int
-    let analysis: String
-    let models: [ModelAnalysis]
+    let analysis: String?
+    let models: [ModelAnalysis]?
     let createdAt: String
     let expiresAt: String?
     let status: BriefStatus
-    let source: String
+    let source: String?
+    /// Entry price from the brief.
+    let entryPrice: Double?
+    /// Stop-loss level.
+    let stopLoss: Double?
+    /// Take-profit level.
+    let takeProfit: Double?
+    /// Timeframe string, e.g. "M30".
+    let timeframe: String?
+    /// Whether the brief is currently active.  Backend sends `isActive`.
+    let isActiveBrief: Bool?
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case symbol = "pair"
+        case direction
+        case confidence
+        case analysis
+        case models
+        case createdAt = "issuedAt"
+        case expiresAt
+        case status
+        case source
+        case entryPrice
+        case stopLoss
+        case takeProfit
+        case timeframe
+        case isActiveBrief = "isActive"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id           = try c.decode(String.self, forKey: .id)
+        symbol       = try c.decode(String.self, forKey: .symbol)
+        direction    = try c.decodeIfPresent(BriefDirection.self, forKey: .direction) ?? .neutral
+        confidence   = try c.decodeIfPresent(Int.self, forKey: .confidence) ?? 50
+        analysis     = try c.decodeIfPresent(String.self, forKey: .analysis)
+        models       = try c.decodeIfPresent([ModelAnalysis].self, forKey: .models)
+        createdAt    = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        expiresAt    = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+        // Derive status from isActive if not explicitly provided
+        if let statusVal = try c.decodeIfPresent(BriefStatus.self, forKey: .status) {
+            status = statusVal
+        } else {
+            let active = try c.decodeIfPresent(Bool.self, forKey: .isActiveBrief) ?? true
+            status = active ? .active : .expired
+        }
+        source       = try c.decodeIfPresent(String.self, forKey: .source)
+        entryPrice   = try c.decodeIfPresent(Double.self, forKey: .entryPrice)
+        stopLoss     = try c.decodeIfPresent(Double.self, forKey: .stopLoss)
+        takeProfit   = try c.decodeIfPresent(Double.self, forKey: .takeProfit)
+        timeframe    = try c.decodeIfPresent(String.self, forKey: .timeframe)
+        isActiveBrief = try c.decodeIfPresent(Bool.self, forKey: .isActiveBrief)
+    }
 
     /// Whether the brief is still actionable.
     var isActionable: Bool { status == .active }
@@ -173,6 +249,11 @@ struct CouncilSession: Codable, Identifiable, Hashable {
 // MARK: - Council Session Status
 
 /// Current state of the council system.
+///
+/// Backend `/strategic-council/session/status` returns:
+/// ```json
+/// { "isRunning": false, "lastSession": null }
+/// ```
 struct CouncilSessionStatus: Codable {
     let isRunning: Bool
     let lastSession: String?
@@ -181,26 +262,100 @@ struct CouncilSessionStatus: Codable {
 // MARK: - Executor Status
 
 /// High-level status of the Smart Executor.
+///
+/// Backend `/smart-executor/status` returns:
+/// ```json
+/// {
+///   "isRunning": true,
+///   "startedAt": "...",
+///   "totalExecutions": 0,
+///   "todayExecutions": 0,
+///   "todayPnL": 0,
+///   "openPositions": 0,
+///   "lastCheckAt": "...",
+///   "dailyLossLimitReached": false,
+///   "lastError": null,
+///   "activeBriefs": 23
+/// }
+/// ```
 struct ExecutorStatus: Codable {
+    /// Backend sends `isRunning` instead of `isActive`.
     let isActive: Bool
-    let mode: String
-    let totalPositions: Int
-    let totalPnl: Double
-    let dailyPnl: Double
+    let startedAt: String?
+    let totalExecutions: Int?
+    let todayExecutions: Int?
+    let todayPnL: Double?
+    let openPositions: Int?
+    let lastCheckAt: String?
+    let dailyLossLimitReached: Bool?
+    let lastError: String?
+    let activeBriefs: Int?
+    /// Mode string (legacy field, may not be present).
+    let mode: String?
+    /// Total PnL (legacy alias).
+    let totalPnl: Double?
+    /// Daily PnL (legacy alias).
+    let dailyPnl: Double?
+    /// Win rate.
     let winRate: Double?
+    /// Last activity timestamp.
     let lastActivity: String?
+    /// Uptime in seconds.
     let uptime: Double?
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case isActive = "isRunning"
+        case startedAt
+        case totalExecutions
+        case todayExecutions
+        case todayPnL
+        case openPositions
+        case lastCheckAt
+        case dailyLossLimitReached
+        case lastError
+        case activeBriefs
+        case mode
+        case totalPnl
+        case dailyPnl
+        case winRate
+        case lastActivity
+        case uptime
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        isActive              = try c.decode(Bool.self, forKey: .isActive)
+        startedAt             = try c.decodeIfPresent(String.self, forKey: .startedAt)
+        totalExecutions       = try c.decodeIfPresent(Int.self, forKey: .totalExecutions)
+        todayExecutions       = try c.decodeIfPresent(Int.self, forKey: .todayExecutions)
+        todayPnL              = try c.decodeIfPresent(Double.self, forKey: .todayPnL)
+        openPositions         = try c.decodeIfPresent(Int.self, forKey: .openPositions)
+        lastCheckAt           = try c.decodeIfPresent(String.self, forKey: .lastCheckAt)
+        dailyLossLimitReached = try c.decodeIfPresent(Bool.self, forKey: .dailyLossLimitReached)
+        lastError             = try c.decodeIfPresent(String.self, forKey: .lastError)
+        activeBriefs          = try c.decodeIfPresent(Int.self, forKey: .activeBriefs)
+        mode                  = try c.decodeIfPresent(String.self, forKey: .mode)
+        totalPnl              = try c.decodeIfPresent(Double.self, forKey: .totalPnl) ?? todayPnL
+        dailyPnl              = try c.decodeIfPresent(Double.self, forKey: .dailyPnl) ?? todayPnL
+        winRate               = try c.decodeIfPresent(Double.self, forKey: .winRate)
+        lastActivity          = try c.decodeIfPresent(String.self, forKey: .lastActivity) ?? lastCheckAt
+        uptime                = try c.decodeIfPresent(Double.self, forKey: .uptime)
+    }
 
     /// Formatted total PnL string.
     var formattedTotalPnl: String {
-        let prefix = totalPnl >= 0 ? "+" : ""
-        return "\(prefix)\(String(format: "%.2f", totalPnl))"
+        let pnl = totalPnl ?? todayPnL ?? 0
+        let prefix = pnl >= 0 ? "+" : ""
+        return "\(prefix)\(String(format: "%.2f", pnl))"
     }
 
     /// Formatted daily PnL string.
     var formattedDailyPnl: String {
-        let prefix = dailyPnl >= 0 ? "+" : ""
-        return "\(prefix)\(String(format: "%.2f", dailyPnl))"
+        let pnl = dailyPnl ?? todayPnL ?? 0
+        let prefix = pnl >= 0 ? "+" : ""
+        return "\(prefix)\(String(format: "%.2f", pnl))"
     }
 
     /// Uptime formatted as "Xd Xh".
@@ -303,30 +458,83 @@ struct CoachQuestion: Codable {
 // MARK: - Signal
 
 /// A trading signal generated by the AI / scanner pipeline.
+///
+/// Flexible decoding: the backend may return signals from different endpoints
+/// with slightly different shapes.  All non-essential fields are optional.
 struct Signal: Codable, Identifiable, Hashable {
     let id: String
     let symbol: String
+    /// Backend may send `direction` as a `BriefDirection` or `SignalDirection`.
     let direction: BriefDirection
-    let type: String
-    let entryPrice: Double
+    let type: String?
+    let entryPrice: Double?
     let stopLoss: Double?
     let takeProfit: Double?
     /// Confidence 0–100.
     let confidence: Int
-    let source: String
+    let source: String?
     let reasoning: String?
-    let status: SignalStatus
+    let status: SignalStatus?
     let createdAt: String
     let expiresAt: String?
+    /// Timeframe string, e.g. "M30".
+    let timeframe: String?
+    /// Whether the signal is currently active.  Backend may send `isActive`.
+    let isActiveSignal: Bool?
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case symbol = "pair"
+        case direction
+        case type
+        case entryPrice
+        case stopLoss
+        case takeProfit
+        case confidence
+        case source
+        case reasoning
+        case status
+        case createdAt = "issuedAt"
+        case expiresAt
+        case timeframe
+        case isActiveSignal = "isActive"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id          = try c.decode(String.self, forKey: .id)
+        symbol      = try c.decode(String.self, forKey: .symbol)
+        direction   = try c.decodeIfPresent(BriefDirection.self, forKey: .direction) ?? .neutral
+        type        = try c.decodeIfPresent(String.self, forKey: .type)
+        entryPrice  = try c.decodeIfPresent(Double.self, forKey: .entryPrice)
+        stopLoss    = try c.decodeIfPresent(Double.self, forKey: .stopLoss)
+        takeProfit  = try c.decodeIfPresent(Double.self, forKey: .takeProfit)
+        confidence  = try c.decodeIfPresent(Int.self, forKey: .confidence) ?? 50
+        source      = try c.decodeIfPresent(String.self, forKey: .source)
+        reasoning   = try c.decodeIfPresent(String.self, forKey: .reasoning)
+        // Derive status from isActive if not explicitly provided
+        if let statusVal = try c.decodeIfPresent(SignalStatus.self, forKey: .status) {
+            status = statusVal
+        } else {
+            let active = try c.decodeIfPresent(Bool.self, forKey: .isActiveSignal) ?? true
+            status = active ? .active : .expired
+        }
+        createdAt    = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        expiresAt    = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+        timeframe    = try c.decodeIfPresent(String.self, forKey: .timeframe)
+        isActiveSignal = try c.decodeIfPresent(Bool.self, forKey: .isActiveSignal)
+    }
 
     /// Whether the signal is still actionable.
     var isActionable: Bool { status == .active }
 
     /// Risk-reward ratio based on SL/TP.
     var riskRewardRatio: Double? {
-        guard let sl = stopLoss, let tp = takeProfit, sl != entryPrice else { return nil }
-        let risk = abs(entryPrice - sl)
-        let reward = abs(tp - entryPrice)
+        guard let sl = stopLoss, let tp = takeProfit, let entry = entryPrice, sl != entry else { return nil }
+        let risk = abs(entry - sl)
+        let reward = abs(tp - entry)
         guard risk > 0 else { return nil }
         return reward / risk
     }

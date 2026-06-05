@@ -172,7 +172,7 @@ private struct BriefCard: View {
                         Text(brief.symbol)
                             .rouaFont(.calloutBold, color: .rouaTextPrimary)
                             .lineLimit(1)
-                        Text(brief.source)
+                        Text(brief.source ?? "Council")
                             .rouaFont(.caption, color: .rouaTextTertiary)
                             .lineLimit(1)
                     }
@@ -210,7 +210,7 @@ private struct BriefCard: View {
                 }
 
                 // Summary
-                Text(brief.analysis)
+                Text(brief.analysis ?? "")
                     .rouaFont(.subheadline, color: .rouaTextSecondary)
                     .lineLimit(isExpanded ? nil : 2)
 
@@ -226,7 +226,7 @@ private struct BriefCard: View {
                 }
 
                 // Expanded: Model votes breakdown
-                if isExpanded && !brief.models.isEmpty {
+                if isExpanded, let models = brief.models, !models.isEmpty {
                     Divider()
                         .background(Color.rouaGlassBorder)
 
@@ -234,11 +234,10 @@ private struct BriefCard: View {
                         .rouaFont(.footnoteBold, color: .rouaTextPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    ForEach(brief.models) { model in
+                    ForEach(models) { model in
                         ModelAnalysisRow(model: model)
                     }
                 }
-            }
         }
     }
 

@@ -269,6 +269,12 @@ enum SignalDirection: String, Codable {
 // MARK: - Brief Direction
 
 /// Direction for AI briefs (3-level).
+///
+/// The backend may send either:
+/// - `"BULLISH"` / `"BEARISH"` / `"NEUTRAL"` (brief-style)
+/// - `"BUY"` / `"SELL"` / `"STRONG_BUY"` / `"STRONG_SELL"` (signal-style)
+///
+/// Custom decoder maps signal-style values to the 3-level brief direction.
 enum BriefDirection: String, Codable {
     case bullish  = "BULLISH"
     case bearish  = "BEARISH"
@@ -279,6 +285,19 @@ enum BriefDirection: String, Codable {
         case .bullish:  return "Bullish"
         case .bearish:  return "Bearish"
         case .neutral:  return "Neutral"
+        }
+    }
+
+    /// Custom decoder that also accepts SignalDirection-style raw values.
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue.uppercased() {
+        case "BULLISH", "BUY", "STRONG_BUY":
+            self = .bullish
+        case "BEARISH", "SELL", "STRONG_SELL":
+            self = .bearish
+        default:
+            self = .neutral
         }
     }
 }

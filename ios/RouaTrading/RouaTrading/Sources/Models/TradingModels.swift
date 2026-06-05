@@ -106,6 +106,8 @@ struct Position: Codable, Identifiable, Hashable {
     let openedAt: String
     let closedAt: String?
     let status: PositionStatus
+    /// Position type from backend (may differ from OrderSide).
+    let type: String?
 
     // ---- Computed helpers ----
 
@@ -152,15 +154,95 @@ struct PositionSummary: Codable {
 // MARK: - Portfolio Summary
 
 /// Full portfolio snapshot including balance and positions.
+///
+/// The backend `/trading/v2/portfolio` returns:
+/// ```json
+/// {
+///   "totalBalance": 0,
+///   "dailyPnL": 0,
+///   "dailyPnLPercent": 0,
+///   "totalExposure": 0,
+///   "usedMargin": 0,
+///   "openPositionsCount": 0,
+///   "maxDrawdownPercent": 0,
+///   "unrealizedPnL": 0,
+///   "positions": []
+/// }
+/// ```
 struct PortfolioSummary: Codable {
     let totalBalance: Double
-    let availableBalance: Double
-    let totalPnl: Double
-    let totalPnlPct: Double
-    let unrealizedPnl: Double
+    let dailyPnL: Double
+    let dailyPnLPercent: Double
+    let totalExposure: Double
+    /// Backend sends `usedMargin`; we expose as `marginUsed` for backward compat.
     let marginUsed: Double
-    let marginAvailable: Double
+    let openPositionsCount: Int
+    let maxDrawdownPercent: Double
+    let unrealizedPnl: Double
     let positions: [Position]
+
+    // Legacy / optional fields not always present in the API response
+    let availableBalance: Double?
+    let totalPnl: Double?
+    let totalPnlPct: Double?
+    let marginAvailable: Double?
+
+    // ---- Coding Keys ----
+
+    enum CodingKeys: String, CodingKey {
+        case totalBalance
+        case dailyPnL
+        case dailyPnLPercent
+        case totalExposure
+        case marginUsed = "usedMargin"
+        case openPositionsCount
+        case maxDrawdownPercent
+        case unrealizedPnl
+        case positions
+        case availableBalance
+        case totalPnl
+        case totalPnlPct
+        case marginAvailable
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalBalance        = try c.decode(Double.self, forKey: .totalBalance)
+        dailyPnL            = try c.decodeIfPresent(Double.self, forKey: .dailyPnL) ?? 0
+        dailyPnLPercent     = try c.decodeIfPresent(Double.self, forKey: .dailyPnLPercent) ?? 0
+        totalExposure       = try c.decodeIfPresent(Double.self, forKey: .totalExposure) ?? 0
+        marginUsed          = try c.decodeIfPresent(Double.self, forKey: .marginUsed) ?? 0
+        openPositionsCount  = try c.decodeIfPresent(Int.self, forKey: .openPositionsCount) ?? 0
+        maxDrawdownPercent  = try c.decodeIfPresent(Double.self, forKey: .maxDrawdownPercent) ?? 0
+        unrealizedPnl       = try c.decodeIfPresent(Double.self, forKey: .unrealizedPnl) ?? 0
+        positions           = try c.decodeIfPresent([Position].self, forKey: .positions) ?? []
+        availableBalance    = try c.decodeIfPresent(Double.self, forKey: .availableBalance)
+        totalPnl            = try c.decodeIfPresent(Double.self, forKey: .totalPnl) ?? dailyPnL
+        totalPnlPct         = try c.decodeIfPresent(Double.self, forKey: .totalPnlPct) ?? dailyPnLPercent
+        marginAvailable     = try c.decodeIfPresent(Double.self, forKey: .marginAvailable)
+    }
+
+    /// Convenience init for creating default / fallback portfolio.
+    init(totalBalance: Double = 0, availableBalance: Double = 0, totalPnl: Double = 0,
+         totalPnlPct: Double = 0, unrealizedPnl: Double = 0, marginUsed: Double = 0,
+         marginAvailable: Double = 0, positions: [Position] = [],
+         dailyPnL: Double = 0, dailyPnLPercent: Double = 0,
+         totalExposure: Double = 0, openPositionsCount: Int = 0,
+         maxDrawdownPercent: Double = 0) {
+        self.totalBalance = totalBalance
+        self.availableBalance = availableBalance
+        self.totalPnl = totalPnl
+        self.totalPnlPct = totalPnlPct
+        self.unrealizedPnl = unrealizedPnl
+        self.marginUsed = marginUsed
+        self.marginAvailable = marginAvailable
+        self.positions = positions
+        self.dailyPnL = dailyPnL
+        self.dailyPnLPercent = dailyPnLPercent
+        self.totalExposure = totalExposure
+        self.openPositionsCount = openPositionsCount
+        self.maxDrawdownPercent = maxDrawdownPercent
+    }
 
     /// Margin usage ratio (0.0 … 1.0).
     var marginUsageRatio: Double {

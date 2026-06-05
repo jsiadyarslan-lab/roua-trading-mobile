@@ -166,7 +166,7 @@ private struct SignalCard: View {
                 HStack(spacing: RouaSpacing.md) {
                     PriceLevelView(
                         label: "الدخول",
-                        value: signal.entryPrice,
+                        value: signal.entryPrice ?? 0,
                         color: .rouaPrimary
                     )
                     if let sl = signal.stopLoss {
@@ -217,7 +217,7 @@ private struct SignalCard: View {
                         Image(systemName: "cpu")
                             .font(.system(size: 10))
                             .foregroundStyle(.rouaTextTertiary)
-                        Text(signal.source)
+                        Text(signal.source ?? "AI")
                             .rouaFont(.caption, color: .rouaTextTertiary)
                     }
                     Spacer()
@@ -323,13 +323,13 @@ private struct SignalHistoryCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(signal.symbol)
                         .rouaFont(.calloutBold, color: .rouaTextPrimary)
-                    Text(String(format: "%.2f", signal.entryPrice))
+                    Text(String(format: "%.2f", signal.entryPrice ?? 0))
                         .rouaFont(.monoSmall, color: .rouaTextSecondary)
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Badge(text: signal.status.displayName, variant: statusVariant)
+                Badge(text: (signal.status ?? .active).displayName, variant: statusVariant)
 
                 Text(signal.createdAt)
                     .rouaFont(.caption, color: .rouaTextTertiary)

@@ -103,7 +103,7 @@ struct SmartExecutorView: View {
                 HStack(spacing: 0) {
                     StatMini(
                         label: "المراكز",
-                        value: "\(viewModel.executorStatus?.totalPositions ?? 0)"
+                        value: "\(viewModel.executorStatus?.openPositions ?? 0)"
                     )
                     .frame(maxWidth: .infinity)
 

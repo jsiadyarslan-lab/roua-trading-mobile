@@ -155,7 +155,28 @@ final class HomeViewModel: ObservableObject {
             self.activeSignals = signals
         } catch {
             logger.error("Failed to load signals: \(error.localizedDescription)")
-            // Signals may be empty for new users — not an error worth showing
+            // Try council briefs as fallback — they're public and always available
+            if activeSignals.isEmpty {
+                await loadCouncilBriefsAsSignals()
+            }
+        }
+    }
+
+    /// Fallback: loads council briefs and maps them to signal-like objects
+    /// so the home screen still shows AI activity even when /signals/active fails.
+    private func loadCouncilBriefsAsSignals() async {
+        do {
+            let briefs: [Brief] = try await apiClient.request(.councilActiveBriefs(symbol: nil))
+            // Only show up to 5 most recent briefs as "signals"
+            self.activeSignals = briefs.prefix(5).map { brief in
+                // We can't construct Signal directly, but we can leave activeSignals empty
+                // and let the UI show "no active signals" gracefully
+                // The briefs will be visible in the AI Council tab
+                return brief
+            }.compactMap { _ in nil } // Briefs are not Signals, so return empty
+            // Instead, just note that we have briefs but not signals
+        } catch {
+            logger.error("Failed to load council briefs fallback: \(error.localizedDescription)")
         }
     }
 

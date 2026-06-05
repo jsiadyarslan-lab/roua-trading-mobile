@@ -175,10 +175,10 @@ struct HomeView: View {
 
                         Spacer()
 
-                        if let portfolio = viewModel.portfolioSummary, portfolio.totalPnl != 0 {
+                        if let portfolio = viewModel.portfolioSummary, let pnl = portfolio.totalPnl, pnl != 0 {
                             ChangeBadge(
-                                value: portfolio.totalPnl,
-                                percentage: portfolio.totalPnlPct
+                                value: pnl,
+                                percentage: portfolio.totalPnlPct ?? 0
                             )
                         }
                     }
@@ -376,7 +376,7 @@ struct HomeView: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("الدخول")
                             .rouaFont(.micro, color: .rouaTextTertiary)
-                        Text(signal.entryPrice.asPrice())
+                        Text((signal.entryPrice ?? 0).asPrice())
                             .rouaFont(.monoSmall, color: .rouaTextPrimary)
                             .monospacedDigit()
                     }

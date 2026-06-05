@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import CryptoKit
+import UIKit
 
 // MARK: - Auth Models
 
@@ -149,6 +150,15 @@ final class AuthService: ObservableObject {
 
     /// Keychain key for storing the user object.
     private let userKey = "roua_user"
+
+    // MARK: - OAuth Session Retention
+
+    /// Strong reference to the active `ASWebAuthenticationSession` to prevent
+    /// premature deallocation while the browser is open.
+    private var webAuthSession: ASWebAuthenticationSession?
+
+    /// Provides the presentation anchor (key window) for `ASWebAuthenticationSession`.
+    private let webAuthProvider = OAuthPresentationProvider()
 
     // MARK: - Initialization
 
@@ -349,7 +359,10 @@ final class AuthService: ObservableObject {
     /// The browser-based flow redirects back to the app via the `roua://`
     /// custom URL scheme with a session token.
     ///
-    /// - Parameter windowProvider: An object that can provide the presenting window.
+    /// - Important: On iOS 13+, `ASWebAuthenticationSession` requires a
+    ///   `presentationContextProvider` to determine which window presents the
+    ///   browser sheet. Without it, the session fails immediately with a
+    ///   generic "operation couldn't be completed" error.
     func signInWithGoogle() async throws {
         let baseURL = AppConfig.webBaseURL + AppConfig.googleOAuthPath
         guard let url = URL(string: baseURL) else {
@@ -375,14 +388,29 @@ final class AuthService: ObservableObject {
                 // Note: prefersEphemeralWebBrowserSession should be false for OAuth
                 // so cookies persist across the sign-in flow
                 session.prefersEphemeralWebBrowserSession = false
+
+                // iOS 13+ REQUIRES a presentationContextProvider — without it,
+                // the session fails immediately with:
+                //   "The operation couldn't be completed" (ASWebAuthenticationSessionError)
+                session.presentationContextProvider = self.webAuthProvider
+
+                // Retain the session strongly so it isn't deallocated while
+                // the browser is open. The local variable alone would be released
+                // as soon as this closure returns.
+                self.webAuthSession = session
+
                 session.start()
             }
         } catch {
+            webAuthSession = nil
             if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
                 throw AuthError.oauthCancelled
             }
             throw AuthError.oauthFailed(error.localizedDescription)
         }
+
+        // Clear the strong reference now that the flow completed
+        webAuthSession = nil
 
         // Extract session token from callback URL
         guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
@@ -537,6 +565,26 @@ final class AuthService: ObservableObject {
             controller.delegate = delegate
             controller.performRequests()
         }
+    }
+}
+
+// MARK: - OAuth Presentation Provider
+
+/// Provides the key window as the presentation anchor for `ASWebAuthenticationSession`.
+///
+/// On iOS 13+, `ASWebAuthenticationSession` requires a `presentationContextProvider`
+/// to determine which window presents the authentication browser sheet.
+/// Without this provider, the session fails immediately with a generic error:
+/// "The operation couldn't be completed (com.apple.AuthenticationServices.WebAuthenticationSession error)".
+private class OAuthPresentationProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+
+    /// Returns the key window of the active scene to present the browser sheet.
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // Find the key window from the active UIWindowScene
+        let scenes = UIApplication.shared.connectedScenes
+        let windowScene = scenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+            ?? scenes.first as? UIWindowScene
+        return windowScene?.windows.first { $0.isKeyWindow } ?? UIWindow()
     }
 }
 

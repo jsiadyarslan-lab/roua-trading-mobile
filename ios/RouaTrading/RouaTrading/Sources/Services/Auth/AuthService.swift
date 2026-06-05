@@ -229,7 +229,7 @@ final class AuthService: ObservableObject {
             relyingPartyIdentifier: challengeResponse.rpId ?? "roua-trading.com"
         )
 
-        let request = provider.createCredentialRequest(
+        let request = provider.createCredentialRegistrationRequest(
             challenge: challengeData,
             name: name ?? email,
             userID: Data(email.utf8)
@@ -250,7 +250,7 @@ final class AuthService: ObservableObject {
             rawId: credential.credentialID.base64EncodedString(),
             response: WebAuthnVerificationResponse(
                 clientDataJSON: credential.rawClientDataJSON.base64EncodedString(),
-                attestationObject: credential.attestationObject?.base64EncodedString(),
+                attestationObject: credential.rawAttestationObject?.base64EncodedString(),
                 authenticatorData: nil,
                 signature: nil,
                 userHandle: nil
@@ -294,7 +294,7 @@ final class AuthService: ObservableObject {
             relyingPartyIdentifier: challengeResponse.rpId ?? "roua-trading.com"
         )
 
-        let request = provider.getCredentialAssertionRequest(
+        let request = provider.createCredentialAssertionRequest(
             challenge: challengeData
         )
 
@@ -303,10 +303,7 @@ final class AuthService: ObservableObject {
             request.allowedCredentials = allowCredentials.map { cred in
                 let credData = Data(base64Encoded: cred.id) ?? Data()
                 return ASAuthorizationPlatformPublicKeyCredentialDescriptor(
-                    credentialID: credData,
-                    transports: cred.transports?.compactMap { transport in
-                        ASAuthorizationSecurityKeyCredentialTransport(rawValue: transport)
-                    } ?? []
+                    credentialID: credData
                 )
             }
         }

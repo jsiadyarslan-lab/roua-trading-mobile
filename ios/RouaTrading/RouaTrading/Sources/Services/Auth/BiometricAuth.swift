@@ -127,7 +127,7 @@ struct BiometricAuth {
                     throw BiometricAuthError.notEnrolled
                 case .biometryLockout:
                     throw BiometricAuthError.lockedOut
-                default:
+                @unknown default:
                     throw BiometricAuthError.unknown(laError)
                 }
             }

@@ -325,6 +325,8 @@ final class AIViewModel: ObservableObject {
     ///   - autoExecute: Whether to auto-execute signals.
     func updateExecutorConfig(maxPositions: Int, riskPercent: Double, autoExecute: Bool) {
         Task {
+            // TODO: Pass autoExecute to the executor enable endpoint once backend supports it
+            _ = autoExecute
             await enableExecutor(maxPositions: maxPositions, riskPercent: riskPercent)
         }
     }

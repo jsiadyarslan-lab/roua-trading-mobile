@@ -425,8 +425,16 @@ final class AuthService: ObservableObject {
             throw AuthError.oauthFailed("No session token in OAuth callback")
         }
 
-        // Store the token and validate the session
+        // Store the session token
         keychain.store(key: AppConfig.sessionTokenKey, value: sessionToken)
+
+        // Also store the refresh token if provided — needed for automatic
+        // session refresh when the session token expires (APIClient.refreshSession
+        // sends this as a Cookie header to /auth/refresh).
+        if let refreshToken = queryItems.first(where: { $0.name == "refresh" })?.value {
+            keychain.store(key: AppConfig.refreshTokenKey, value: refreshToken)
+        }
+
         try await validateAfterOAuth()
     }
 

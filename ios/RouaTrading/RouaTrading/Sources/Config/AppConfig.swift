@@ -11,13 +11,13 @@ enum AppConfig {
     // MARK: - API
 
     /// Base URL for all REST API requests.
-    static let apiBaseURL = URL(string: "https://roua-trading.com/api")!
+    static let apiBaseURL = URL(string: "https://roua-trading-production.up.railway.app/api")!
 
     /// Base URL for web-based flows (OAuth, legal pages, etc.).
-    static let webBaseURL = "https://roua-trading.com"
+    static let webBaseURL = "https://roua-trading-production.up.railway.app"
 
     /// Base URL for the backend Socket.IO / WebSocket server.
-    static let socketURL = URL(string: "https://roua-trading.com")!
+    static let socketURL = URL(string: "https://roua-trading-production.up.railway.app")!
 
     // MARK: - WebSocket
 
@@ -36,7 +36,10 @@ enum AppConfig {
     static let authCallbackScheme = "roua"
 
     /// Path appended to `webBaseURL` to initiate Google OAuth sign-in.
-    static let googleOAuthPath = "/auth/signin/google?app_redirect_uri=roua://auth/callback"
+    /// NOTE: Must include /api prefix because the Google OAuth route is a
+    /// Next.js API Route Handler (apps/web/src/app/api/auth/signin/google/route.ts),
+    /// NOT a NestJS route. The /api prefix is part of the Next.js URL path.
+    static let googleOAuthPath = "/api/auth/signin/google?app_redirect_uri=roua://auth/callback"
 
     // MARK: - Cache
 

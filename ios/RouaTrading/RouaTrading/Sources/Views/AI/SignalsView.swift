@@ -302,6 +302,7 @@ private struct SignalHistoryCard: View {
         case .executed:  return .info
         case .expired:   return .neutral
         case .cancelled: return .warning
+        case nil:        return .neutral
         }
     }
 

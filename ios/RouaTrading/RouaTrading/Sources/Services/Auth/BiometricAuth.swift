@@ -121,12 +121,24 @@ struct BiometricAuth {
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
             if let laError = error as? LAError {
                 switch laError.code {
-                case .biometryNotAvailable:
+                case .biometryNotAvailable, .touchIDNotAvailable:
                     throw BiometricAuthError.notAvailable
-                case .biometryNotEnrolled:
+                case .biometryNotEnrolled, .touchIDNotEnrolled:
                     throw BiometricAuthError.notEnrolled
-                case .biometryLockout:
+                case .biometryLockout, .touchIDLockout:
                     throw BiometricAuthError.lockedOut
+                case .passcodeNotSet:
+                    throw BiometricAuthError.notAvailable
+                case .systemCancel, .appCancel:
+                    throw BiometricAuthError.cancelled
+                case .authenticationFailed:
+                    throw BiometricAuthError.cancelled
+                case .userCancel:
+                    throw BiometricAuthError.cancelled
+                case .userFallback:
+                    throw BiometricAuthError.fallbackSelected
+                case .invalidContext, .notInteractive:
+                    throw BiometricAuthError.unknown(laError)
                 @unknown default:
                     throw BiometricAuthError.unknown(laError)
                 }

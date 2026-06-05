@@ -338,14 +338,16 @@ struct AuthView: View {
             showEmailField.toggle()
         }
         if showEmailField {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 isEmailFocused = true
             }
         }
     }
 
     private func performEntranceAnimation() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        Task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                 showContent = true
             }

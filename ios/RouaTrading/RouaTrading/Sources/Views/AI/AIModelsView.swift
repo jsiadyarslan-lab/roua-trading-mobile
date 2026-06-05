@@ -214,16 +214,16 @@ struct AIModelsView: View {
     private func runDiagnosis() {
         isDiagnosing = true
         Task { await viewModel.loadAIModels() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             isDiagnosing = false
             withAnimation(.easeInOut(duration: RouaSpacing.animationDuration)) {
                 showDiagnosticResult = true
             }
             // Auto-hide after 10 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                withAnimation(.easeInOut(duration: RouaSpacing.animationDuration)) {
-                    showDiagnosticResult = false
-                }
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            withAnimation(.easeInOut(duration: RouaSpacing.animationDuration)) {
+                showDiagnosticResult = false
             }
         }
     }

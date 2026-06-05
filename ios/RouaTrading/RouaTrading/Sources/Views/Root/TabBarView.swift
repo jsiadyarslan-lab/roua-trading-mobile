@@ -54,7 +54,6 @@ enum RouaTab: Int, CaseIterable, Identifiable {
 struct TabBarView: View {
 
     @State private var selectedTab: RouaTab = .home
-    @State private var previousTab: RouaTab = .home
 
     // Badge counts — driven by the HomeViewModel in production.
     // These are @State for now; replace with @EnvironmentObject or @ObservedObject.
@@ -106,7 +105,7 @@ struct TabBarView: View {
                 }
             }
             .padding(.top, RouaSpacing.sm)
-            .padding(.bottom, UIScreen.main.bounds.height < 700 ? RouaSpacing.xs : RouaSpacing.md)
+            .padding(.bottom, RouaSpacing.sm)
             .background(
                 // Glassmorphism background
                 tabBarBackground
@@ -154,7 +153,6 @@ struct TabBarView: View {
 
         Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                previousTab = selectedTab
                 selectedTab = tab
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()

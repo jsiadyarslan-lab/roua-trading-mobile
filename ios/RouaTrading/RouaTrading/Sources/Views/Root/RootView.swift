@@ -64,7 +64,8 @@ struct RootView: View {
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
                     withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                         showMainApp = true
                     }

@@ -106,11 +106,13 @@ struct AIHubView: View {
                         .padding(.horizontal, RouaSpacing.lg)
                         .padding(.vertical, RouaSpacing.sm)
                         .background(
-                            Capsule().fill(
-                                selectedTab == tab
-                                    ? Color.rouaGradientPrimary
-                                    : Color.rouaSurfaceLight
-                            )
+                            Group {
+                                if selectedTab == tab {
+                                    Capsule().fill(Color.rouaGradientPrimary)
+                                } else {
+                                    Capsule().fill(Color.rouaSurfaceLight)
+                                }
+                            }
                         )
                         .overlay(
                             Capsule()

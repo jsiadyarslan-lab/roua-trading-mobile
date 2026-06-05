@@ -139,7 +139,7 @@ struct DeepAnalysisView: View {
 
     private var aiConsensusSection: some View {
         VStack(spacing: RouaSpacing.sm) {
-            SectionHeader(title: "إجماع الذكاء الاصطناعي") {
+            SectionHeader(title: "إجماع الذكاء الاصطناعي", actionTitle: showConsensus ? "إخفاء" : "التفاصيل") {
                 showConsensus.toggle()
             }
 

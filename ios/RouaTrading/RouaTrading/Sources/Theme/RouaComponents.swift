@@ -81,12 +81,12 @@ struct GlassCard<Content: View>: View {
                     .stroke(Color.rouaGlassBorder, lineWidth: 1)
             )
             .shadow(
-                color: glow?.opacity(0.3) ?? .clear,
+                color: glow?.opacity(0.3) ?? Color.clear,
                 radius: RouaSpacing.glowRadius,
                 x: 0, y: 0
             )
             .shadow(
-                color: .black.opacity(0.2),
+                color: Color.black.opacity(0.2),
                 radius: RouaSpacing.shadowRadius,
                 x: 0, y: RouaSpacing.shadowOffsetY
             )

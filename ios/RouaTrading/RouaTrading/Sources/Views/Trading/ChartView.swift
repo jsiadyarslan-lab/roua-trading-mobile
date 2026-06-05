@@ -199,7 +199,7 @@ class ChartViewWrapper: UIView {
     /// Creates the chart widget with dark theme and configures all series.
     /// v4: setupChart takes ChartDelegate (not ChartViewDelegate).
     func setupChart(delegate: ChartDelegate?) {
-        backgroundColor = .clear
+        backgroundColor = UIColor.clear
 
         // ChartOptions init parameter order: width, height, watermark, layout,
         // leftPriceScale, rightPriceScale, overlayPriceScales, timeScale,

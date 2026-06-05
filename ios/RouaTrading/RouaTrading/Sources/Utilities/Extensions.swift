@@ -21,7 +21,7 @@ extension Color {
         }
 
         guard hexSanitized.count == 6 else {
-            self = .clear
+            self = Color.clear
             return
         }
 

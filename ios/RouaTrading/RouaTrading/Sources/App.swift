@@ -10,11 +10,15 @@ import SwiftUI
 @main
 struct RouaTradingApp: App {
     @StateObject private var authViewModel = AuthViewModel()
+    @StateObject private var languageManager = LanguageManager()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authViewModel)
+                .environmentObject(languageManager)
+                .environment(\.locale, languageManager.locale)
+                .environment(\.layoutDirection, languageManager.layoutDirection)
                 .preferredColorScheme(.dark)
         }
     }

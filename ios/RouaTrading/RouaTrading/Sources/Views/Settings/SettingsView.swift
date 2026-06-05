@@ -13,6 +13,7 @@ import SwiftUI
 struct SettingsView: View {
 
     @StateObject private var viewModel = SettingsViewModel()
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var showSignOutConfirmation = false
     @State private var showSignOutAllConfirmation = false
     @State private var showChangePasskey = false
@@ -35,6 +36,9 @@ struct SettingsView: View {
 
                         // Trading Section
                         tradingSection
+
+                        // Language Section
+                        languageSection
 
                         // About Section
                         aboutSection
@@ -357,6 +361,57 @@ extension SettingsView {
                                 .tint(.rouaPrimary)
                         }
                         .padding(.horizontal, RouaSpacing.md)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Language Section
+
+extension SettingsView {
+
+    private var languageSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            SectionHeader(title: languageManager.isArabic ? "اللغة" : "Language")
+
+            GlassCard {
+                VStack(spacing: 0) {
+                    // Language picker
+                    ForEach(AppLanguage.allCases) { lang in
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                languageManager.setLanguage(lang)
+                            }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        } label: {
+                            HStack(spacing: RouaSpacing.md) {
+                                Image(systemName: lang == .arabic ? "text.alignright" : "text.alignleft")
+                                    .font(.system(size: RouaSpacing.iconMedium))
+                                    .foregroundStyle(lang == .arabic ? .rouaPrimary : .rouaAccent)
+                                    .frame(width: 32, height: 32)
+                                    .background((lang == .arabic ? Color.rouaPrimary : Color.rouaAccent).opacity(0.15))
+                                    .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
+
+                                Text(lang.nativeName)
+                                    .rouaFont(.subheadline, color: .rouaTextPrimary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                if languageManager.currentLanguage == lang {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: RouaSpacing.iconMedium))
+                                        .foregroundStyle(.rouaPrimary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, RouaSpacing.xs)
+                        }
+                        .buttonStyle(.plain)
+
+                        if lang != AppLanguage.allCases.last {
+                            Divider().background(Color.rouaGlassBorder)
+                        }
                     }
                 }
             }

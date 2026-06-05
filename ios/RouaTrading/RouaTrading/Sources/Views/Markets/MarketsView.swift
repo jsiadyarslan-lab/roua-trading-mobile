@@ -72,6 +72,9 @@ struct MarketsView: View {
                     .accessibilityLabel("Refresh markets")
                 }
             }
+            .task {
+                viewModel.loadAll()
+            }
             .refreshable {
                 viewModel.loadAll(); await Task.yield()
             }

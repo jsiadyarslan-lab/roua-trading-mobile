@@ -55,8 +55,10 @@ struct TabBarView: View {
 
     @State private var selectedTab: RouaTab = .home
 
-    // Badge counts — driven by the HomeViewModel in production.
-    // These are @State for now; replace with @EnvironmentObject or @ObservedObject.
+    // Real-time data from SocketManager
+    @ObservedObject var socketManager: SocketManager
+
+    // Badge counts — driven by real-time events and view models.
     @State private var activeSignalCount: Int = 0
     @State private var unreadNotificationCount: Int = 0
 
@@ -87,6 +89,35 @@ struct TabBarView: View {
             tabBarOverlay
         }
         .ignoresSafeArea(.keyboard)
+        .onAppear {
+            setupSocketEvents()
+        }
+        .onReceive(socketManager.$isNotificationsActive) { _ in
+            // Connection status changed
+        }
+    }
+
+    // MARK: - Socket Event Handler
+
+    private func setupSocketEvents() {
+        socketManager.onEvent = { event in
+            switch event {
+            case .unreadCount(let count):
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    unreadNotificationCount = count
+                }
+            case .autoExecuteSignal:
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    activeSignalCount += 1
+                }
+            case .notification:
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    unreadNotificationCount += 1
+                }
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Tab Bar Overlay
@@ -227,6 +258,6 @@ struct TabBarView: View {
 // MARK: - Preview
 
 #Preview("TabBarView") {
-    TabBarView()
+    TabBarView(socketManager: SocketManager())
         .preferredColorScheme(.dark)
 }

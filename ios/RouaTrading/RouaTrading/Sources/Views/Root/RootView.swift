@@ -18,6 +18,11 @@ struct RootView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
 
+    // MARK: - Socket Manager
+
+    /// Manages real-time connections to the backend (WebSocket + polling).
+    @StateObject private var socketManager = SocketManager()
+
     // MARK: - Animation State
 
     @State private var showMainApp = false
@@ -51,7 +56,7 @@ struct RootView: View {
 
             } else if authViewModel.isAuthenticated {
                 // ── Authenticated → Main App ──
-                TabBarView()
+                TabBarView(socketManager: socketManager)
                     .opacity(showMainApp ? 1 : 0)
                     .offset(y: showMainApp ? 0 : 20)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -89,6 +94,8 @@ struct RootView: View {
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
+                // Connect real-time channels when authenticated
+                socketManager.connect()
                 Task {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                     withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -96,6 +103,8 @@ struct RootView: View {
                     }
                 }
             } else {
+                // Disconnect real-time channels when signed out
+                socketManager.disconnect()
                 showMainApp = false
             }
         }

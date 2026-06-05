@@ -54,6 +54,9 @@ struct SettingsView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                viewModel.loadAll()
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text("الإعدادات")

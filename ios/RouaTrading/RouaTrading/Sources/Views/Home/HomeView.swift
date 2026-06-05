@@ -19,6 +19,7 @@ struct HomeView: View {
 
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @EnvironmentObject private var languageManager: LanguageManager
 
     // MARK: - Body
 
@@ -84,14 +85,32 @@ struct HomeView: View {
     }
 
     private var notificationBell: some View {
-        Button {
-            // Navigate to notifications
-        } label: {
-            Image(systemName: "bell.fill")
-                .font(.system(size: RouaSpacing.iconMedium))
-                .foregroundStyle(.rouaTextSecondary)
+        HStack(spacing: RouaSpacing.sm) {
+            // Language toggle button
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    languageManager.toggle()
+                }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                Text(languageManager.isArabic ? "EN" : "ع")
+                    .rouaFont(.captionBold, color: .rouaPrimary)
+                    .frame(width: 28, height: 28)
+                    .background(Color.rouaPrimary.opacity(0.15))
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(languageManager.isArabic ? "Switch to English" : "التبديل إلى العربية")
+
+            // Notification bell
+            Button {
+                // Navigate to notifications
+            } label: {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(.rouaTextSecondary)
+            }
+            .accessibilityLabel("الإشعارات")
         }
-        .accessibilityLabel("الإشعارات")
     }
 
     // MARK: - Content
@@ -113,23 +132,17 @@ struct HomeView: View {
                 // Section 1: Portfolio Summary
                 portfolioSummarySection
 
-                // Section 2: Market Movers
-                if !viewModel.topGainers.isEmpty || !viewModel.topLosers.isEmpty {
-                    marketMoversSection
-                }
+                // Section 2: Market Movers — always show section header, show placeholder when empty
+                marketMoversSection
 
-                // Section 3: AI Signals
-                if !viewModel.activeSignals.isEmpty {
-                    aiSignalsSection
-                }
+                // Section 3: AI Signals — always show section header, show placeholder when empty
+                aiSignalsSection
 
                 // Section 4: Smart Executor Status
                 executorStatusSection
 
-                // Section 5: Recent News
-                if !viewModel.recentNews.isEmpty {
-                    recentNewsSection
-                }
+                // Section 5: Recent News — always show section header, show placeholder when empty
+                recentNewsSection
 
                 // Section 6: Quick Actions
                 quickActionsSection
@@ -221,19 +234,34 @@ struct HomeView: View {
                 // Navigate to Markets tab
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: RouaSpacing.md) {
-                    // Gainers
-                    ForEach(viewModel.topGainers.prefix(3)) { result in
-                        moverCard(result: result)
+            if viewModel.topGainers.isEmpty && viewModel.topLosers.isEmpty {
+                GlassCard {
+                    VStack(spacing: RouaSpacing.sm) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: RouaSpacing.iconLarge))
+                            .foregroundStyle(.rouaTextTertiary)
+                        Text("جارٍ تحميل بيانات السوق…")
+                            .rouaFont(.subheadline, color: .rouaTextSecondary)
                     }
-
-                    // Losers
-                    ForEach(viewModel.topLosers.prefix(3)) { result in
-                        moverCard(result: result)
-                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, RouaSpacing.xl)
                 }
                 .padding(.horizontal, RouaSpacing.screenPadding)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: RouaSpacing.md) {
+                        // Gainers
+                        ForEach(viewModel.topGainers.prefix(3)) { result in
+                            moverCard(result: result)
+                        }
+
+                        // Losers
+                        ForEach(viewModel.topLosers.prefix(3)) { result in
+                            moverCard(result: result)
+                        }
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                }
             }
         }
     }
@@ -290,13 +318,28 @@ struct HomeView: View {
                 // Navigate to AI Hub > Signals
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: RouaSpacing.md) {
-                    ForEach(viewModel.activeSignals) { signal in
-                        signalCard(signal: signal)
+            if viewModel.activeSignals.isEmpty {
+                GlassCard {
+                    VStack(spacing: RouaSpacing.sm) {
+                        Image(systemName: "signal")
+                            .font(.system(size: RouaSpacing.iconLarge))
+                            .foregroundStyle(.rouaTextTertiary)
+                        Text("لا توجد إشارات نشطة حالياً")
+                            .rouaFont(.subheadline, color: .rouaTextSecondary)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, RouaSpacing.xl)
                 }
                 .padding(.horizontal, RouaSpacing.screenPadding)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: RouaSpacing.md) {
+                        ForEach(viewModel.activeSignals) { signal in
+                            signalCard(signal: signal)
+                        }
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                }
             }
         }
     }
@@ -389,12 +432,27 @@ struct HomeView: View {
                 // Navigate to Markets > News
             }
 
-            VStack(spacing: RouaSpacing.sm) {
-                ForEach(viewModel.recentNews.prefix(5)) { news in
-                    newsRow(news: news)
+            if viewModel.recentNews.isEmpty {
+                GlassCard {
+                    VStack(spacing: RouaSpacing.sm) {
+                        Image(systemName: "newspaper")
+                            .font(.system(size: RouaSpacing.iconLarge))
+                            .foregroundStyle(.rouaTextTertiary)
+                        Text("جارٍ تحميل الأخبار…")
+                            .rouaFont(.subheadline, color: .rouaTextSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, RouaSpacing.xl)
                 }
+                .padding(.horizontal, RouaSpacing.screenPadding)
+            } else {
+                VStack(spacing: RouaSpacing.sm) {
+                    ForEach(viewModel.recentNews.prefix(5)) { news in
+                        newsRow(news: news)
+                    }
+                }
+                .padding(.horizontal, RouaSpacing.screenPadding)
             }
-            .padding(.horizontal, RouaSpacing.screenPadding)
         }
     }
 
@@ -589,5 +647,6 @@ struct HomeView: View {
 #Preview("HomeView") {
     HomeView()
         .environmentObject(AuthViewModel())
+        .environmentObject(LanguageManager())
         .preferredColorScheme(.dark)
 }

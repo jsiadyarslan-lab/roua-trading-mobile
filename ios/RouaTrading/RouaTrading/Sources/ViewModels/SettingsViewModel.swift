@@ -219,9 +219,16 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Sign Out
 
-    /// Signs out the current user.
+    /// Signs out the current user by clearing tokens and session.
     func signOut() {
-        // TODO: Clear session via AuthService, navigate to auth
+        // Clear session token from Keychain
+        let keychain = KeychainManager.shared
+        keychain.delete(key: AppConfig.sessionTokenKey)
+        keychain.delete(key: AppConfig.refreshTokenKey)
+
+        // Clear current user
+        authService.clearSession()
+
         logger.info("User signed out")
     }
 

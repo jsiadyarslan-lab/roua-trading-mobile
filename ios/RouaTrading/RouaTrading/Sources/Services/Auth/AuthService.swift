@@ -533,7 +533,7 @@ final class AuthService: ObservableObject {
     }
 
     /// Clears all local session data.
-    private func clearSession() {
+    func clearSession() {
         keychain.delete(key: AppConfig.sessionTokenKey)
         keychain.delete(key: AppConfig.refreshTokenKey)
         keychain.delete(key: userKey)

@@ -94,6 +94,9 @@ struct PortfolioView: View {
                         .rouaFont(.headline, color: .rouaTextPrimary)
                 }
             }
+            .task {
+                viewModel.loadAll()
+            }
             .refreshable {
                 viewModel.loadAll()
             }

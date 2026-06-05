@@ -70,6 +70,9 @@ struct AIHubView: View {
             .background(Color.rouaBackground)
             .navigationTitle("المركز الذكي")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                viewModel.loadAll()
+            }
             .overlay {
                 if let error = viewModel.errorMessage {
                     ErrorBanner(

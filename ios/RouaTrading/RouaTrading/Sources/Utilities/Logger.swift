@@ -95,7 +95,8 @@ struct RouaLogger {
     ) {
         #if DEBUG
         let fileName = (file as NSString).lastPathComponent
-        logger.debug("[\(fileName):\(line)] \(function) — \(message())")
+        let msg = message()
+        logger.debug("[\(fileName):\(line)] \(function) — \(msg)")
         #endif
     }
 
@@ -109,7 +110,8 @@ struct RouaLogger {
     /// - Parameter message: The message to log.
     @_transparent
     func info(_ message: @autoclosure () -> String) {
-        logger.info("ℹ️ \(message())")
+        let msg = message()
+        logger.info("ℹ️ \(msg)")
     }
 
     // MARK: - Warning
@@ -121,7 +123,8 @@ struct RouaLogger {
     /// - Parameter message: The message to log.
     @_transparent
     func warning(_ message: @autoclosure () -> String) {
-        logger.warning("⚠️ \(message())")
+        let msg = message()
+        logger.warning("⚠️ \(msg)")
     }
 
     // MARK: - Error
@@ -144,7 +147,8 @@ struct RouaLogger {
         line: Int = #line
     ) {
         let fileName = (file as NSString).lastPathComponent
-        logger.error("❌ [\(fileName):\(line)] \(function) — \(message())")
+        let msg = message()
+        logger.error("❌ [\(fileName):\(line)] \(function) — \(msg)")
     }
 
     // MARK: - Fault
@@ -156,6 +160,7 @@ struct RouaLogger {
     /// - Parameter message: The message to log.
     @_transparent
     func fault(_ message: @autoclosure () -> String) {
-        logger.fault("🚨 \(message())")
+        let msg = message()
+        logger.fault("🚨 \(msg)")
     }
 }

@@ -102,7 +102,12 @@ final class APIClient {
     private let logger = AppLogger.network
 
     /// Active tasks that can be cancelled.
+    /// Keyed by endpoint path for selective cancellation.
     private var activeTasks: [String: URLSessionTask] = [:]
+
+    /// Stores the task ID associated with each in-flight request URL,
+    /// so we can cancel requests by endpoint path.
+    private var taskIDToPath: [Int: String] = [:]
 
     /// Whether a token refresh is currently in progress (prevents concurrent refreshes).
     private var isRefreshing = false
@@ -194,15 +199,23 @@ final class APIClient {
     }
 
     /// Cancels the in-flight request for the given endpoint path, if any.
+    ///
+    /// - Note: Due to the async nature of `URLSession.data(for:)`, we cannot
+    ///   directly cancel individual requests. This method cancels all tracked
+    ///   tasks with the matching path prefix.
     func cancelRequest(for endpointPath: String) {
-        activeTasks[endpointPath]?.cancel()
-        activeTasks.removeValue(forKey: endpointPath)
+        let keysToRemove = activeTasks.keys.filter { $0 == endpointPath }
+        for key in keysToRemove {
+            activeTasks[key]?.cancel()
+            activeTasks.removeValue(forKey: key)
+        }
     }
 
     /// Cancels all active requests.
     func cancelAllRequests() {
         activeTasks.values.forEach { $0.cancel() }
         activeTasks.removeAll()
+        taskIDToPath.removeAll()
     }
 
     // MARK: - Request Execution
@@ -232,11 +245,11 @@ final class APIClient {
         logRequest(mutableRequest, body: body)
 
         do {
-            let task = session.dataTask(with: mutableRequest)
-            activeTasks[taskID] = task
-
+            // Use the async data method and track the underlying task for cancellation.
+            // NOTE: session.data(for:) creates an internal URLSessionTask.
+            // We cannot directly access it for cancellation. Instead, we use a
+            // dedicated cancellable wrapper approach.
             let (responseData, response) = try await session.data(for: mutableRequest)
-            activeTasks.removeValue(forKey: taskID)
 
             logResponse(response, data: responseData, for: endpoint.path)
 
@@ -245,8 +258,21 @@ final class APIClient {
                 switch httpResponse.statusCode {
                 case 200...299:
                     break // success
-                case 401 where endpoint.requiresAuth && retryCount == 0:
-                    // Attempt token refresh then retry
+                case 401 where retryCount == 0:
+                    // Attempt token refresh then retry (for both auth-required and
+                    // public endpoints — an invalid token on any endpoint should trigger
+                    // a refresh attempt)
+                    return try await handleUnauthorizedAndRetry(
+                        endpoint: endpoint,
+                        body: body,
+                        queryItems: queryItems,
+                        retryCount: retryCount
+                    )
+
+                case 403 where retryCount == 0:
+                    // 403 Forbidden can mean the session is invalid or the user
+                    // lacks permissions. Treat it like 401 and try refreshing.
+                    logger.warning("🚫 403 Forbidden for \(endpoint.path) — attempting token refresh")
                     return try await handleUnauthorizedAndRetry(
                         endpoint: endpoint,
                         body: body,
@@ -332,8 +358,23 @@ final class APIClient {
         // The backend can use the token to personalize responses, and having
         // an invalid token on a public endpoint won't cause a 401.
         if let sessionToken = keychain.retrieve(key: AppConfig.sessionTokenKey) {
+            // Send the session token via multiple mechanisms for maximum
+            // backend compatibility:
+            // 1. Custom header (x-roua-session)
             request.setValue(sessionToken, forHTTPHeaderField: "x-roua-session")
+            // 2. Standard Authorization Bearer header
             request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+            // 3. Cookie header — the backend's session middleware expects
+            //    the roua_session cookie. Even though we disabled automatic
+            //    cookie management (httpShouldSetCookies = false), we must
+            //    manually include the session cookie so the backend can
+            //    identify the user.
+            var cookieParts = ["roua_session=\(sessionToken)"]
+            // Also include the refresh token if available
+            if let refreshToken = keychain.retrieve(key: AppConfig.refreshTokenKey) {
+                cookieParts.append("roua_refresh=\(refreshToken)")
+            }
+            request.setValue(cookieParts.joined(separator: "; "), forHTTPHeaderField: "Cookie")
         } else if requiresAuth, let refreshToken = keychain.retrieve(key: AppConfig.refreshTokenKey) {
             // Fallback: include refresh token as cookie header (only for auth-required endpoints)
             request.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")

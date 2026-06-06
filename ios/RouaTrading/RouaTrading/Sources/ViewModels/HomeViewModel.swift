@@ -167,14 +167,28 @@ final class HomeViewModel: ObservableObject {
     private func loadCouncilBriefsAsSignals() async {
         do {
             let briefs: [Brief] = try await apiClient.request(.councilActiveBriefs(symbol: nil))
-            // Only show up to 5 most recent briefs as "signals"
-            self.activeSignals = briefs.prefix(5).map { brief in
-                // We can't construct Signal directly, but we can leave activeSignals empty
-                // and let the UI show "no active signals" gracefully
-                // The briefs will be visible in the AI Council tab
-                return brief
-            }.compactMap { _ in nil } // Briefs are not Signals, so return empty
-            // Instead, just note that we have briefs but not signals
+            // Convert Briefs to Signals so the home screen can display them.
+            // Briefs have all the fields needed for the signal card (symbol/pair,
+            // direction, confidence, entryPrice, etc.)
+            self.activeSignals = briefs.map { brief in
+                Signal(
+                    id: brief.id,
+                    symbol: brief.symbol,
+                    direction: brief.direction,
+                    type: brief.timeframe,
+                    entryPrice: brief.entryPrice,
+                    stopLoss: brief.stopLoss,
+                    takeProfit: brief.takeProfit,
+                    confidence: brief.confidence,
+                    source: brief.source,
+                    reasoning: brief.analysis,
+                    status: .active,
+                    createdAt: brief.createdAt,
+                    expiresAt: brief.expiresAt,
+                    timeframe: brief.timeframe,
+                    isActiveSignal: brief.isActiveBrief
+                )
+            }
         } catch {
             logger.error("Failed to load council briefs fallback: \(error.localizedDescription)")
         }

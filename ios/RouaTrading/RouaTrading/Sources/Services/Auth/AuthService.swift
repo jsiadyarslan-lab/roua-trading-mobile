@@ -180,13 +180,72 @@ final class AuthService: ObservableObject {
         }
 
         do {
-            let sessionInfo: SessionInfo = try await apiClient.request(.authSession)
-            self.currentUser = sessionInfo.user
-            self.isAuthenticated = true
-            logger.info("Session validated for user: \(sessionInfo.user.email)")
+            // The backend /auth/session endpoint returns:
+            //   Authenticated:   {"authenticated": true, "user": {...}}
+            //   Not authenticated: {"authenticated": false}
+            // We first check the `authenticated` flag, then extract user data.
+            let rawData = try await apiClient.requestRaw(.authSession)
 
-            // Persist user object
-            keychain.store(key: userKey, value: sessionInfo.user)
+            // Try to decode as a simple response with `authenticated` flag
+            if let json = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any] {
+                let isAuthed = json["authenticated"] as? Bool ?? false
+
+                guard isAuthed else {
+                    logger.info("Session not authenticated — attempting refresh")
+                    // Token exists but session is not valid, try refresh
+                    do {
+                        let refreshed = try await apiClient.refreshSession()
+                        if refreshed {
+                            // Re-fetch session info after refresh
+                            let refreshedData = try await apiClient.requestRaw(.authSession)
+                            if let refreshedJson = try? JSONSerialization.jsonObject(with: refreshedData) as? [String: Any],
+                               let stillAuthed = refreshedJson["authenticated"] as? Bool, stillAuthed,
+                               let userData = refreshedJson["user"] {
+                                let userDataJson = try JSONSerialization.data(withJSONObject: userData)
+                                let user = try JSONDecoder().decode(User.self, from: userDataJson)
+                                self.currentUser = user
+                                self.isAuthenticated = true
+                                keychain.store(key: userKey, value: user)
+                                logger.info("Session refreshed and validated for user: \(user.email)")
+                            } else {
+                                clearSession()
+                            }
+                        } else {
+                            clearSession()
+                        }
+                    } catch {
+                        logger.error("Session refresh failed: \(error)")
+                        clearSession()
+                    }
+                    return
+                }
+
+                // User is authenticated — extract user data
+                if let userData = json["user"] {
+                    let userDataJson = try JSONSerialization.data(withJSONObject: userData)
+                    let user = try JSONDecoder().decode(User.self, from: userDataJson)
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    keychain.store(key: userKey, value: user)
+                    logger.info("Session validated for user: \(user.email)")
+                } else {
+                    // Try decoding as SessionInfo (legacy format)
+                    let sessionInfo = try JSONDecoder().decode(SessionInfo.self, from: rawData)
+                    self.currentUser = sessionInfo.user
+                    self.isAuthenticated = true
+                    keychain.store(key: userKey, value: sessionInfo.user)
+                    if let token = sessionInfo.sessionToken {
+                        keychain.store(key: AppConfig.sessionTokenKey, value: token)
+                    }
+                    logger.info("Session validated (legacy format) for user: \(sessionInfo.user.email)")
+                }
+            } else {
+                // Fallback: try decoding as SessionInfo directly
+                let sessionInfo: SessionInfo = try await apiClient.request(.authSession)
+                self.currentUser = sessionInfo.user
+                self.isAuthenticated = true
+                keychain.store(key: userKey, value: sessionInfo.user)
+            }
         } catch {
             logger.warning("Session validation failed: \(error) — attempting refresh")
 

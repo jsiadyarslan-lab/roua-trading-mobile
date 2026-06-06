@@ -155,11 +155,24 @@ final class CacheManager {
     // MARK: - Inspection
 
     /// Whether the cache contains a non-expired entry for the given key.
+    ///
+    /// Uses type-erased checking since stored entries are `CacheEntry<T>` for
+    /// various concrete `T` types, and Swift's generic invariance prevents
+    /// casting `CacheEntry<SomeType>` to `CacheEntry<Any>`.
     func contains(forKey key: String) -> Bool {
-        guard let entry = storage[key] as? CacheEntry<Any> else {
+        guard let entry = storage[key] else {
             return false
         }
-        return !entry.isExpired
+        // Use Mirror to inspect the `isExpired` property without knowing the
+        // concrete generic type at compile time.
+        let mirror = Mirror(reflecting: entry)
+        for child in mirror.children {
+            if child.label == "isExpired", let isExpired = child.value as? Bool {
+                return !isExpired
+            }
+        }
+        // If we can't read isExpired, assume the entry exists and is valid
+        return true
     }
 
     /// The total number of entries in the cache (including expired).
@@ -175,13 +188,20 @@ final class CacheManager {
     // MARK: - Cleanup
 
     /// Removes all expired entries from the cache.
+    ///
+    /// Uses Mirror reflection to read the `isExpired` property from each
+    /// `CacheEntry<T>` regardless of the concrete generic type `T`.
     func cleanupExpired() {
         var removedCount = 0
 
         for (key, entry) in storage {
-            if let cacheEntry = entry as? CacheEntry<Any>, cacheEntry.isExpired {
-                storage.removeValue(forKey: key)
-                removedCount += 1
+            let mirror = Mirror(reflecting: entry)
+            for child in mirror.children {
+                if child.label == "isExpired", let isExpired = child.value as? Bool, isExpired {
+                    storage.removeValue(forKey: key)
+                    removedCount += 1
+                    break
+                }
             }
         }
 

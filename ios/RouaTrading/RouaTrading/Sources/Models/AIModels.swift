@@ -527,6 +527,41 @@ struct Signal: Codable, Identifiable, Hashable {
         isActiveSignal = try c.decodeIfPresent(Bool.self, forKey: .isActiveSignal)
     }
 
+    /// Direct memberwise init for creating Signal from a Brief or programmatically.
+    init(
+        id: String,
+        symbol: String,
+        direction: BriefDirection,
+        type: String? = nil,
+        entryPrice: Double? = nil,
+        stopLoss: Double? = nil,
+        takeProfit: Double? = nil,
+        confidence: Int = 50,
+        source: String? = nil,
+        reasoning: String? = nil,
+        status: SignalStatus? = nil,
+        createdAt: String = "",
+        expiresAt: String? = nil,
+        timeframe: String? = nil,
+        isActiveSignal: Bool? = nil
+    ) {
+        self.id = id
+        self.symbol = symbol
+        self.direction = direction
+        self.type = type
+        self.entryPrice = entryPrice
+        self.stopLoss = stopLoss
+        self.takeProfit = takeProfit
+        self.confidence = confidence
+        self.source = source
+        self.reasoning = reasoning
+        self.status = status ?? (isActiveSignal ?? true ? .active : .expired)
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.timeframe = timeframe
+        self.isActiveSignal = isActiveSignal
+    }
+
     /// Whether the signal is still actionable.
     var isActionable: Bool { status == .active }
 

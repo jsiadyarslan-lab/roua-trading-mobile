@@ -197,7 +197,7 @@ struct PortfolioSummary: Codable {
         case marginUsed = "usedMargin"
         case openPositionsCount
         case maxDrawdownPercent
-        case unrealizedPnl
+        case unrealizedPnl = "unrealizedPnL"
         case positions
         case availableBalance
         case totalPnl

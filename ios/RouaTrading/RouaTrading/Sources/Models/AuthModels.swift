@@ -42,6 +42,17 @@ struct User: Codable, Identifiable, Hashable, Sendable {
             ?? email
     }
 
+    /// Custom encode — only emit stored properties (not the 'name' alias).
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(email, forKey: .email)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(tier, forKey: .tier)
+        try container.encodeIfPresent(avatarUrl, forKey: .avatarUrl)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+    }
+
     // Direct memberwise init for programmatic creation
     init(id: String, email: String, displayName: String, tier: UserTier = .free, avatarUrl: String? = nil, createdAt: String = "") {
         self.id = id

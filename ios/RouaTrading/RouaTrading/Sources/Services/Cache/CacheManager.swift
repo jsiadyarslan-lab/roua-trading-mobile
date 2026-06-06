@@ -159,19 +159,22 @@ final class CacheManager {
     /// Uses type-erased checking since stored entries are `CacheEntry<T>` for
     /// various concrete `T` types, and Swift's generic invariance prevents
     /// casting `CacheEntry<SomeType>` to `CacheEntry<Any>`.
+    ///
+    /// Checks the `expiresAt` stored property via Mirror (computed properties
+    /// like `isExpired` are not visible to Mirror).
     func contains(forKey key: String) -> Bool {
         guard let entry = storage[key] else {
             return false
         }
-        // Use Mirror to inspect the `isExpired` property without knowing the
-        // concrete generic type at compile time.
+        // Use Mirror to inspect the `expiresAt` stored property, then
+        // compare with the current date to determine expiry.
         let mirror = Mirror(reflecting: entry)
         for child in mirror.children {
-            if child.label == "isExpired", let isExpired = child.value as? Bool {
-                return !isExpired
+            if child.label == "expiresAt", let expiresAt = child.value as? Date {
+                return expiresAt > Date()
             }
         }
-        // If we can't read isExpired, assume the entry exists and is valid
+        // If we can't read expiresAt, assume the entry exists and is valid
         return true
     }
 
@@ -189,15 +192,18 @@ final class CacheManager {
 
     /// Removes all expired entries from the cache.
     ///
-    /// Uses Mirror reflection to read the `isExpired` property from each
-    /// `CacheEntry<T>` regardless of the concrete generic type `T`.
+    /// Uses Mirror reflection to read the `expiresAt` stored property from each
+    /// `CacheEntry<T>` regardless of the concrete generic type `T`, then
+    /// compares with the current date. (Mirror cannot see computed properties
+    /// like `isExpired`, so we check the stored `expiresAt` directly.)
     func cleanupExpired() {
         var removedCount = 0
+        let now = Date()
 
         for (key, entry) in storage {
             let mirror = Mirror(reflecting: entry)
             for child in mirror.children {
-                if child.label == "isExpired", let isExpired = child.value as? Bool, isExpired {
+                if child.label == "expiresAt", let expiresAt = child.value as? Date, expiresAt <= now {
                     storage.removeValue(forKey: key)
                     removedCount += 1
                     break

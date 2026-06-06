@@ -245,11 +245,15 @@ final class APIClient {
         logRequest(mutableRequest, body: body)
 
         do {
-            // Use the async data method and track the underlying task for cancellation.
-            // NOTE: session.data(for:) creates an internal URLSessionTask.
-            // We cannot directly access it for cancellation. Instead, we use a
-            // dedicated cancellable wrapper approach.
-            let (responseData, response) = try await session.data(for: mutableRequest)
+            // Use a manual URLSessionDataTask + continuation so we can track
+            // the task for cancellation. The built-in session.data(for:) hides
+            // the underlying task, making it impossible to cancel per-request.
+            let (responseData, response) = try await executeTask(
+                request: mutableRequest,
+                taskID: taskID
+            )
+
+            defer { activeTasks.removeValue(forKey: taskID) }
 
             logResponse(response, data: responseData, for: endpoint.path)
 
@@ -308,6 +312,30 @@ final class APIClient {
             throw APIError.cancelled
         } catch {
             throw APIError.networkError(underlying: error)
+        }
+    }
+
+    // MARK: - Task Execution Helper
+
+    /// Creates a URLSessionDataTask with a completion handler, bridges the
+    /// result to async/await via a continuation, and stores the task in
+    /// `activeTasks` so it can be cancelled by path.
+    private func executeTask(
+        request: URLRequest,
+        taskID: String
+    ) async throws -> (Data, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            let task = session.dataTask(with: request) { data, response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data, let response {
+                    continuation.resume(returning: (data, response))
+                } else {
+                    continuation.resume(throwing: URLError(.badServerResponse))
+                }
+            }
+            activeTasks[taskID] = task
+            task.resume()
         }
     }
 

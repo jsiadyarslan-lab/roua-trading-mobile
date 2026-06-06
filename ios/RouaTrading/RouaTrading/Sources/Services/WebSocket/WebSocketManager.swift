@@ -17,7 +17,7 @@ import Combine
 ///   }
 /// }
 /// ```
-private struct BinanceKlineData: Codable, Sendable {
+struct BinanceKlineData: Codable, Sendable {
     let openTime: Int64
     let symbol: String
     let interval: String

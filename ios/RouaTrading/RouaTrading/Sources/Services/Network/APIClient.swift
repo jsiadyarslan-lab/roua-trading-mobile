@@ -488,7 +488,9 @@ final class APIClient {
     /// 1. Try `APIResponse<T>` — standard envelope with `success` + `data`
     /// 2. Try `APIDataEnvelope<T>` — just `{ "data": T }`
     /// 3. Try `T` directly — raw object
-    /// 4. If `T` is `[Any].Type`, try `APIItemsResponse<T>` and `APIResponse<[T]>`
+    /// 4. Try extracting `items` array via JSONSerialization (handles `{"items":[...]}`)
+    /// 5. Try `APIItemsResponse<DynamicCodable>` as fallback
+    /// 6. Try `APIResponse<DynamicCodable>` with array data
     private func smartDecode<T: Codable>(_ data: Data) throws -> T {
         // Strategy 1: APIResponse<T>
         if let response = try? JSONDecoder().decode(APIResponse<T>.self, from: data) {
@@ -513,8 +515,20 @@ final class APIClient {
             return value
         }
 
-        // Strategy 4: For array types, try { "items": [...] }
-        // We attempt to decode as APIItemsResponse and extract items
+        // Strategy 4: Extract `items` array via JSONSerialization.
+        // The backend scanner endpoints return `{"success":true,"items":[...],"meta":{...}}`
+        // which none of the typed wrappers above handle correctly (they all expect a `data` key).
+        // We extract the raw `items` array and decode it directly as T.
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let itemsArray = json["items"] {
+            let itemsData = try JSONSerialization.data(withJSONObject: itemsArray)
+            if let value = try? JSONDecoder().decode(T.self, from: itemsData) {
+                return value
+            }
+        }
+
+        // Strategy 5: For array types, try { "items": [...] } via APIItemsResponse
+        // (fallback — less reliable than Strategy 4 because DynamicCodable loses field data)
         if let itemsResponse = try? JSONDecoder().decode(APIItemsResponse<DynamicCodable>.self, from: data) {
             let itemsData = try JSONEncoder().encode(itemsResponse.items)
             if let value = try? JSONDecoder().decode(T.self, from: itemsData) {
@@ -522,7 +536,7 @@ final class APIClient {
             }
         }
 
-        // Strategy 5: APIResponse with array data
+        // Strategy 6: APIResponse with array data
         if let arrayResponse = try? JSONDecoder().decode(APIResponse<DynamicCodable>.self, from: data),
            let arrayData = arrayResponse.data {
             let encoded = try JSONEncoder().encode(arrayData)

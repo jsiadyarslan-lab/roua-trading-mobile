@@ -101,7 +101,12 @@ struct PortfolioView: View {
                 viewModel.loadAll()
             }
             .overlay {
-                if viewModel.isLoading {
+                // Only show full-screen loading on first load when ALL data is empty.
+                // Once any data arrives, hide the overlay so the user can see what loaded.
+                if viewModel.isLoading
+                    && viewModel.balances == nil
+                    && viewModel.credentials.isEmpty
+                    && viewModel.agentState == nil {
                     LoadingView(message: "جاري التحميل...")
                 }
             }

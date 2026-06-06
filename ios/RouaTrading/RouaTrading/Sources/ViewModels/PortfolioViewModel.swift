@@ -92,7 +92,8 @@ final class PortfolioViewModel: ObservableObject {
             self.credentials = credentials
         } catch {
             logger.error("Failed to load credentials: \(error.localizedDescription)")
-            errorMessage = "Failed to load credentials."
+            // Don't set errorMessage — credentials require auth and may fail
+            // for unauthenticated users. Show empty state instead of error.
         }
     }
 
@@ -105,7 +106,8 @@ final class PortfolioViewModel: ObservableObject {
             self.balances = balances
         } catch {
             logger.error("Failed to load balances: \(error.localizedDescription)")
-            errorMessage = "Failed to load balances."
+            // Don't set errorMessage — balances require auth.
+            // Show empty/default state instead of blocking the UI.
         }
     }
 
@@ -118,7 +120,7 @@ final class PortfolioViewModel: ObservableObject {
             self.riskReport = report
         } catch {
             logger.error("Failed to load risk report: \(error.localizedDescription)")
-            errorMessage = "Failed to load risk report."
+            // Don't set errorMessage — sanctuary requires auth.
         }
     }
 

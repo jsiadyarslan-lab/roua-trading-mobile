@@ -44,6 +44,10 @@ final class TradingViewModel: ObservableObject {
     /// Candlestick data for the chart.
     @Published var candles: [CandleData] = []
 
+    /// The live (current, still open) candle from WebSocket.
+    /// Used for incremental chart updates to avoid full redraws on every tick.
+    @Published var liveCandle: CandleData?
+
     /// The latest quote for the current symbol.
     @Published var currentQuote: Quote?
 
@@ -271,6 +275,7 @@ final class TradingViewModel: ObservableObject {
 
         currentSymbol = normalized
         candles = []
+        liveCandle = nil
         currentQuote = nil
         orderResult = nil
         errorMessage = nil
@@ -296,6 +301,7 @@ final class TradingViewModel: ObservableObject {
 
         selectedTimeframe = interval
         candles = []
+        liveCandle = nil
         errorMessage = nil
 
         Task {
@@ -336,7 +342,8 @@ final class TradingViewModel: ObservableObject {
     /// Processes a kline update from the WebSocket.
     ///
     /// If the kline is for a closed candle, it is appended to the chart.
-    /// If it's for the current (open) candle, the last candle is updated.
+    /// If it's for the current (open) candle, `liveCandle` is updated for
+    /// incremental chart rendering (avoids full redraw on every tick).
     private func handleKlineUpdate(_ kline: BinanceKline) {
         // Binance sends symbol as "BTCUSDT"; our currentSymbol is "BTC/USD".
         // Compare by stripping the slash from our symbol.
@@ -354,17 +361,22 @@ final class TradingViewModel: ObservableObject {
 
         if kline.isClosed {
             // Closed candle — append to chart if not already present
+            liveCandle = nil
             if candles.last?.time != updatedCandle.time {
                 candles.append(updatedCandle)
             } else if let lastIndex = candles.indices.last {
                 candles[lastIndex] = updatedCandle
             }
         } else {
-            // Open (current) candle — update the last entry
+            // Open (current) candle — use liveCandle for incremental update
+            liveCandle = updatedCandle
+
+            // Also update the candles array if this candle is already there
+            // (so that volumeData derived from candles stays in sync)
             if let lastIndex = candles.indices.last,
                candles[lastIndex].time == updatedCandle.time {
                 candles[lastIndex] = updatedCandle
-            } else {
+            } else if candles.last?.time != updatedCandle.time {
                 candles.append(updatedCandle)
             }
         }

@@ -283,7 +283,7 @@ struct TradingView: View {
                 ChartView(
                     candles: viewModel.candles,
                     volumeData: chartVolumeData,
-                    liveCandle: nil,
+                    liveCandle: viewModel.liveCandle,
                     onCrosshairMove: nil
                 )
                 .frame(height: 260)

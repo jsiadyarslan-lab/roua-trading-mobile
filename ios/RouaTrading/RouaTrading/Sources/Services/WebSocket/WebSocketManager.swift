@@ -3,13 +3,24 @@ import Combine
 
 // MARK: - WebSocket Models
 
-/// A parsed Binance kline (candlestick) update.
-struct BinanceKline: Codable, Sendable {
-    let eventType: String
-    let eventTime: Int64
+/// The nested kline data inside a Binance WebSocket kline event.
+///
+/// Binance sends kline data wrapped in a `k` object:
+/// ```json
+/// {
+///   "e": "kline", "E": 1672531200000, "s": "BTCUSDT",
+///   "k": {
+///     "t": 1672531200000, "s": "BTCUSDT", "i": "1h",
+///     "o": "16800.00", "h": "16850.00", "l": "16750.00",
+///     "c": "16820.00", "v": "1234.56", "T": 1672534799999,
+///     "q": "20701234.56", "n": 1234, "x": false
+///   }
+/// }
+/// ```
+private struct BinanceKlineData: Codable, Sendable {
+    let openTime: Int64
     let symbol: String
     let interval: String
-    let openTime: Int64
     let open: String
     let high: String
     let low: String
@@ -21,11 +32,9 @@ struct BinanceKline: Codable, Sendable {
     let isClosed: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case eventType = "e"
-        case eventTime = "E"
+        case openTime = "t"
         case symbol = "s"
         case interval = "i"
-        case openTime = "t"
         case open = "o"
         case high = "h"
         case low = "l"
@@ -35,6 +44,36 @@ struct BinanceKline: Codable, Sendable {
         case quoteVolume = "q"
         case trades = "n"
         case isClosed = "x"
+    }
+}
+
+/// A parsed Binance kline (candlestick) update.
+///
+/// The top-level kline event wraps the actual candle data in a `k` field.
+struct BinanceKline: Codable, Sendable {
+    let eventType: String
+    let eventTime: Int64
+    let symbol: String
+    let k: BinanceKlineData
+
+    /// Convenience accessors that delegate to the nested `k` data:
+    var interval: String { k.interval }
+    var openTime: Int64 { k.openTime }
+    var open: String { k.open }
+    var high: String { k.high }
+    var low: String { k.low }
+    var close: String { k.close }
+    var volume: String { k.volume }
+    var closeTime: Int64 { k.closeTime }
+    var quoteVolume: String { k.quoteVolume }
+    var trades: Int { k.trades }
+    var isClosed: Bool { k.isClosed }
+
+    private enum CodingKeys: String, CodingKey {
+        case eventType = "e"
+        case eventTime = "E"
+        case symbol = "s"
+        case k
     }
 }
 

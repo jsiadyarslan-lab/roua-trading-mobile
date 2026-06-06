@@ -86,6 +86,15 @@ struct ChartView: UIViewRepresentable {
     func updateUIView(_ wrapper: ChartViewWrapper, context: Context) {
         // Update candle data (use != for structs, !== only works with classes)
         if candles != context.coordinator.previousCandles {
+            // Detect if this is a full data replacement (symbol/timeframe change)
+            // by checking if the first candle's time changed or array was emptied
+            let isFullReplacement = candles.isEmpty ||
+                context.coordinator.previousCandles?.first?.time != candles.first?.time
+
+            if isFullReplacement {
+                wrapper.resetFitState()
+            }
+
             wrapper.setCandleData(candles)
             context.coordinator.previousCandles = candles
             context.coordinator.hasInitializedData = true

@@ -160,11 +160,11 @@ struct Brief: Codable, Identifiable, Hashable {
         case symbol = "pair"
         case direction
         case confidence
-        case analysis
+        case analysis = "analysisSummary"
         case models
         case createdAt = "issuedAt"
         case expiresAt
-        case status
+        case status = "reviewStatus"
         case source
         case entryPrice
         case stopLoss
@@ -229,9 +229,15 @@ struct ModelAnalysis: Codable, Identifiable, Hashable {
 // MARK: - Briefs Response
 
 /// Wrapper for the active-briefs endpoint.
+///
+/// Backend `/strategic-council/briefs` returns:
+/// ```json
+/// { "success": true, "data": { "active": [...] } }
+/// ```
+/// The `count` field may not be present, so it is optional.
 struct BriefsResponse: Codable {
     let active: [Brief]
-    let count: Int
+    let count: Int?
 }
 
 // MARK: - Council Session

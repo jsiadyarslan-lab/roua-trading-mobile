@@ -43,7 +43,19 @@ struct TradingView: View {
 
     // MARK: - ViewModel
 
-    @StateObject private var viewModel = TradingViewModel()
+    @StateObject private var viewModel: TradingViewModel
+
+    // MARK: - Initializer
+
+    /// Creates a TradingView for a specific symbol.
+    /// - Parameter symbol: The trading symbol (e.g., "BTC/USD"). Defaults to "BTC/USD".
+    init(symbol: String = "BTC/USD") {
+        _viewModel = StateObject(wrappedValue: {
+            let vm = TradingViewModel()
+            vm.currentSymbol = symbol
+            return vm
+        }())
+    }
 
     // MARK: - Sheet State
 

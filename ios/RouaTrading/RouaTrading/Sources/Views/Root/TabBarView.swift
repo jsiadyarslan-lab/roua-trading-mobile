@@ -20,7 +20,7 @@ import SwiftUI
 enum RouaTab: Int, CaseIterable, Identifiable {
     case home = 0
     case markets = 1
-    case aiHub = 2
+    case trading = 2
     case portfolio = 3
     case settings = 4
 
@@ -31,7 +31,7 @@ enum RouaTab: Int, CaseIterable, Identifiable {
         switch self {
         case .home:      return "الرئيسية"
         case .markets:   return "الأسواق"
-        case .aiHub:     return "الذكاء"
+        case .trading:   return "التداول"
         case .portfolio: return "المحفظة"
         case .settings:  return "الإعدادات"
         }
@@ -42,7 +42,7 @@ enum RouaTab: Int, CaseIterable, Identifiable {
         switch self {
         case .home:      return "house.fill"
         case .markets:   return "chart.line.uptrend.xyaxis"
-        case .aiHub:     return "brain.head.profile.fill"
+        case .trading:   return "chart.bar.fill"
         case .portfolio: return "wallet.pass.fill"
         case .settings:  return "gearshape.fill"
         }
@@ -73,8 +73,8 @@ struct TabBarView: View {
                 case .markets:
                     MarketsView()
 
-                case .aiHub:
-                    AIHubView()
+                case .trading:
+                    TradingView()
 
                 case .portfolio:
                     PortfolioView()

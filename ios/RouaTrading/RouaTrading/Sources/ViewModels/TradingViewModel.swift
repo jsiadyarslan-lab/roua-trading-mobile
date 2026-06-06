@@ -36,8 +36,10 @@ final class TradingViewModel: ObservableObject {
 
     // MARK: - Published State
 
-    /// The currently selected trading symbol (e.g., "BTCUSDT").
-    @Published var currentSymbol: String = "BTCUSDT"
+    /// The currently selected trading symbol (e.g., "BTC/USD").
+    /// NOTE: The backend uses the "BTC/USD" format (with slash), not "BTCUSDT".
+    /// Using the wrong format causes 503 errors from the exchange endpoints.
+    @Published var currentSymbol: String = "BTC/USD"
 
     /// Candlestick data for the chart.
     @Published var candles: [CandleData] = []
@@ -248,10 +250,37 @@ final class TradingViewModel: ObservableObject {
     ///
     /// - Parameter symbol: The new trading symbol (e.g., "ETHUSDT").
     func switchSymbol(_ symbol: String) {
-        let newSymbol = symbol.uppercased()
-        guard newSymbol != currentSymbol else { return }
+        // Normalize the symbol: ensure it uses the backend's "BTC/USD" format.
+        // If the symbol comes from Binance WebSocket (e.g., "BTCUSDT"),
+        // convert it to our format by inserting a slash before the quote currency.
+        let normalized: String
+        if symbol.contains("/") {
+            normalized = symbol.uppercased()
+        } else if symbol.count >= 3 {
+            // Try to detect quote currency: USD, USDT, BTC, ETH, etc.
+            let upper = symbol.uppercased()
+            let quoteCurrencies = ["USDT", "USD", "BUSD", "BTC", "ETH", "BNB"]
+            var found = false
+            for quote in quoteCurrencies {
+                if upper.hasSuffix(quote) {
+                    let base = upper.dropLast(quote.count)
+                    if !base.isEmpty {
+                        normalized = "\(base)/\(quote)"
+                        found = true
+                        break
+                    }
+                }
+            }
+            if !found {
+                normalized = upper
+            }
+        } else {
+            normalized = symbol.uppercased()
+        }
+        
+        guard normalized != currentSymbol else { return }
 
-        currentSymbol = newSymbol
+        currentSymbol = normalized
         candles = []
         currentQuote = nil
         orderResult = nil
@@ -291,10 +320,15 @@ final class TradingViewModel: ObservableObject {
     // MARK: - WebSocket Management
 
     /// Connects the WebSocket for live price and kline updates.
+    ///
+    /// Binance WebSocket expects symbols in format "btcusdt" (lowercase, no slash).
+    /// Our backend uses "BTC/USD" format, so we convert: "BTC/USD" → "btcusdt".
     private func connectWebSocket() {
-        let symbol = currentSymbol.lowercased()
+        let binanceSymbol = currentSymbol
+            .replacingOccurrences(of: "/", with: "")
+            .lowercased()  // e.g. "BTC/USD" → "btcusdt"
         let interval = selectedTimeframe.rawValue
-        webSocket.connect(symbols: [symbol], intervals: [interval])
+        webSocket.connect(symbols: [binanceSymbol], intervals: [interval])
     }
 
     /// Sets up WebSocket callbacks for real-time data updates.
@@ -315,7 +349,10 @@ final class TradingViewModel: ObservableObject {
     /// If the kline is for a closed candle, it is appended to the chart.
     /// If it's for the current (open) candle, the last candle is updated.
     private func handleKlineUpdate(_ kline: BinanceKline) {
-        guard kline.symbol.uppercased() == currentSymbol else { return }
+        // Binance sends symbol as "BTCUSDT"; our currentSymbol is "BTC/USD".
+        // Compare by stripping the slash from our symbol.
+        let matchSymbol = currentSymbol.replacingOccurrences(of: "/", with: "").uppercased()
+        guard kline.symbol.uppercased() == matchSymbol else { return }
 
         let updatedCandle = CandleData(
             time: Int(kline.openTime / 1000),
@@ -348,7 +385,9 @@ final class TradingViewModel: ObservableObject {
     ///
     /// Updates `currentQuote` with the latest price and change data.
     private func handleTickerUpdate(_ ticker: BinanceTicker) {
-        guard ticker.symbol.uppercased() == currentSymbol else { return }
+        // Binance sends symbol as "BTCUSDT"; our currentSymbol is "BTC/USD".
+        let matchSymbol = currentSymbol.replacingOccurrences(of: "/", with: "").uppercased()
+        guard ticker.symbol.uppercased() == matchSymbol else { return }
 
         let quote = Quote(
             symbol: ticker.symbol.uppercased(),

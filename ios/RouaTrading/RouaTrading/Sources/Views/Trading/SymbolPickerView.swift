@@ -55,22 +55,22 @@ struct SymbolPickerView: View {
     // MARK: - Popular Symbols
 
     private let popularSymbols: [SymbolItem] = [
-        SymbolItem(id: "BTCUSDT", symbol: "BTCUSDT", name: "Bitcoin", price: 67500, change: 1250, changePct: 1.89, category: .crypto),
-        SymbolItem(id: "ETHUSDT", symbol: "ETHUSDT", name: "Ethereum", price: 3620, change: -45, changePct: -1.23, category: .crypto),
-        SymbolItem(id: "SOLUSDT", symbol: "SOLUSDT", name: "Solana", price: 185, change: 8.5, changePct: 4.82, category: .crypto),
-        SymbolItem(id: "BNBUSDT", symbol: "BNBUSDT", name: "BNB", price: 610, change: -12, changePct: -1.93, category: .crypto),
-        SymbolItem(id: "XRPUSDT", symbol: "XRPUSDT", name: "Ripple", price: 2.35, change: 0.15, changePct: 6.82, category: .crypto),
-        SymbolItem(id: "ADAUSDT", symbol: "ADAUSDT", name: "Cardano", price: 0.98, change: -0.03, changePct: -2.97, category: .crypto),
-        SymbolItem(id: "DOGEUSDT", symbol: "DOGEUSDT", name: "Dogecoin", price: 0.38, change: 0.02, changePct: 5.56, category: .crypto),
-        SymbolItem(id: "AVAXUSDT", symbol: "AVAXUSDT", name: "Avalanche", price: 38.50, change: 1.20, changePct: 3.21, category: .crypto),
+        SymbolItem(id: "BTC/USD", symbol: "BTC/USD", name: "Bitcoin", price: 67500, change: 1250, changePct: 1.89, category: .crypto),
+        SymbolItem(id: "ETH/USD", symbol: "ETH/USD", name: "Ethereum", price: 3620, change: -45, changePct: -1.23, category: .crypto),
+        SymbolItem(id: "SOL/USD", symbol: "SOL/USD", name: "Solana", price: 185, change: 8.5, changePct: 4.82, category: .crypto),
+        SymbolItem(id: "BNB/USD", symbol: "BNB/USD", name: "BNB", price: 610, change: -12, changePct: -1.93, category: .crypto),
+        SymbolItem(id: "XRP/USD", symbol: "XRP/USD", name: "Ripple", price: 2.35, change: 0.15, changePct: 6.82, category: .crypto),
+        SymbolItem(id: "ADA/USD", symbol: "ADA/USD", name: "Cardano", price: 0.98, change: -0.03, changePct: -2.97, category: .crypto),
+        SymbolItem(id: "DOGE/USD", symbol: "DOGE/USD", name: "Dogecoin", price: 0.38, change: 0.02, changePct: 5.56, category: .crypto),
+        SymbolItem(id: "AVAX/USD", symbol: "AVAX/USD", name: "Avalanche", price: 38.50, change: 1.20, changePct: 3.21, category: .crypto),
     ]
 
     // MARK: - Recent Symbols
 
     private let recentSymbols: [SymbolItem] = [
-        SymbolItem(id: "BTCUSDT", symbol: "BTCUSDT", name: "Bitcoin", price: 67500, change: 1250, changePct: 1.89, category: .crypto),
-        SymbolItem(id: "ETHUSDT", symbol: "ETHUSDT", name: "Ethereum", price: 3620, change: -45, changePct: -1.23, category: .crypto),
-        SymbolItem(id: "SOLUSDT", symbol: "SOLUSDT", name: "Solana", price: 185, change: 8.5, changePct: 4.82, category: .crypto),
+        SymbolItem(id: "BTC/USD", symbol: "BTC/USD", name: "Bitcoin", price: 67500, change: 1250, changePct: 1.89, category: .crypto),
+        SymbolItem(id: "ETH/USD", symbol: "ETH/USD", name: "Ethereum", price: 3620, change: -45, changePct: -1.23, category: .crypto),
+        SymbolItem(id: "SOL/USD", symbol: "SOL/USD", name: "Solana", price: 185, change: 8.5, changePct: 4.82, category: .crypto),
     ]
 
     // MARK: - Computed
@@ -338,7 +338,7 @@ struct SymbolPickerView: View {
 
 #Preview("SymbolPickerView") {
     SymbolPickerView(
-        selectedSymbol: "BTCUSDT",
+        selectedSymbol: "BTC/USD",
         onSelect: { symbol in print("Selected: \(symbol)") }
     )
 }

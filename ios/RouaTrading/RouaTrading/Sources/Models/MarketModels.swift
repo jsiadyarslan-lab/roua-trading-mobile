@@ -26,6 +26,58 @@ struct Quote: Codable, Identifiable, Hashable {
     let timestamp: String
     let source: String?
 
+    // ---- Coding Keys (backend field names → Swift) ----
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, price, change, high, low, open, volume
+        case changePct = "changePercent"
+        case bid, ask, timestamp, source
+        // Backend also sends: name, exchange, currency, close, marketCap, etc.
+        // These are ignored during decoding.
+    }
+
+    // ---- Custom decoder with fallback defaults ----
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        symbol    = try c.decode(String.self, forKey: .symbol)
+        price     = try c.decode(Double.self, forKey: .price)
+        change    = try c.decodeIfPresent(Double.self, forKey: .change) ?? 0
+        changePct = try c.decodeIfPresent(Double.self, forKey: .changePct) ?? 0
+        high      = try c.decodeIfPresent(Double.self, forKey: .high) ?? 0
+        low       = try c.decodeIfPresent(Double.self, forKey: .low) ?? 0
+        open      = try c.decodeIfPresent(Double.self, forKey: .open) ?? 0
+        volume    = try c.decodeIfPresent(Double.self, forKey: .volume) ?? 0
+        bid       = try c.decodeIfPresent(Double.self, forKey: .bid)
+        ask       = try c.decodeIfPresent(Double.self, forKey: .ask)
+        // Backend may send timestamp as String (ISO-8601) or missing entirely
+        if let ts = try? c.decodeIfPresent(String.self, forKey: .timestamp) {
+            timestamp = ts
+        } else {
+            timestamp = ""
+        }
+        source    = try c.decodeIfPresent(String.self, forKey: .source)
+    }
+
+    // ---- Direct memberwise init ----
+
+    init(symbol: String, price: Double, change: Double = 0, changePct: Double = 0,
+         high: Double = 0, low: Double = 0, open: Double = 0, volume: Double = 0,
+         bid: Double? = nil, ask: Double? = nil, timestamp: String = "", source: String? = nil) {
+        self.symbol = symbol
+        self.price = price
+        self.change = change
+        self.changePct = changePct
+        self.high = high
+        self.low = low
+        self.open = open
+        self.volume = volume
+        self.bid = bid
+        self.ask = ask
+        self.timestamp = timestamp
+        self.source = source
+    }
+
     // ---- Computed helpers ----
 
     /// Whether the quote shows positive movement.
@@ -47,6 +99,18 @@ struct Quote: Codable, Identifiable, Hashable {
 // MARK: - Candle Data
 
 /// A single OHLCV candle for chart rendering.
+///
+/// The backend `/exchange/history/:symbol` returns candles in this format:
+/// ```json
+/// {
+///   "symbol": "BTC/USD",
+///   "timestamp": "2026-05-25T03:00:00.000Z",
+///   "open": 77108.77, "high": 77169.88, "low": 77002.3, "close": 77026.67,
+///   "volume": 198.70522, "source": "Binance"
+/// }
+/// ```
+/// We map `timestamp` (ISO 8601 String) → `time` (Int unix seconds) so the
+/// LightweightCharts library can consume it directly.
 struct CandleData: Codable, Identifiable, Hashable {
     /// Time serves as the unique identifier.
     var id: Int { time }
@@ -58,6 +122,61 @@ struct CandleData: Codable, Identifiable, Hashable {
     let low: Double
     let close: Double
     let volume: Double
+
+    // ---- Coding Keys (backend field names → Swift) ----
+
+    enum CodingKeys: String, CodingKey {
+        case time        // local unix-time key (set in decoder)
+        case timestamp   // backend ISO-8601 key
+        case open, high, low, close, volume
+        case source
+    }
+
+    // ---- Custom decoder: convert ISO-8601 `timestamp` → Int `time` ----
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        open   = try container.decode(Double.self, forKey: .open)
+        high   = try container.decode(Double.self, forKey: .high)
+        low    = try container.decode(Double.self, forKey: .low)
+        close  = try container.decode(Double.self, forKey: .close)
+        volume = try container.decode(Double.self, forKey: .volume)
+
+        // The backend sends `timestamp` as ISO-8601 string.
+        // If `time` is present (unix int), use it directly; otherwise parse timestamp.
+        if let unixTime = try? container.decodeIfPresent(Int.self, forKey: .time) {
+            time = unixTime
+        } else if let tsString = try? container.decodeIfPresent(String.self, forKey: .timestamp) {
+            // Parse ISO-8601 → Date → unix seconds
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: tsString) {
+                time = Int(date.timeIntervalSince1970)
+            } else {
+                // Fallback: try without fractional seconds
+                formatter.formatOptions = [.withInternetDateTime]
+                if let date = formatter.date(from: tsString) {
+                    time = Int(date.timeIntervalSince1970)
+                } else {
+                    time = 0
+                }
+            }
+        } else {
+            time = 0
+        }
+    }
+
+    // ---- Direct memberwise init ----
+
+    init(time: Int, open: Double, high: Double, low: Double, close: Double, volume: Double) {
+        self.time = time
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
+    }
 
     /// Whether the candle is bullish (close ≥ open).
     var isBullish: Bool { close >= open }

@@ -270,41 +270,46 @@ struct HomeView: View {
     private func moverCard(result: ScannerResult) -> some View {
         let isPositive = result.change >= 0
 
-        GlassCard {
-            VStack(alignment: .leading, spacing: RouaSpacing.sm) {
-                HStack {
-                    Text(String(result.symbol.prefix(2)))
-                        .rouaFont(.captionBold, color: .rouaTextPrimary)
-                        .frame(width: 32, height: 32)
-                        .background(Color.rouaSurfaceLight)
-                        .clipShape(Circle())
+        NavigationLink {
+            TradingView(symbol: result.symbol)
+        } label: {
+            GlassCard {
+                VStack(alignment: .leading, spacing: RouaSpacing.sm) {
+                    HStack {
+                        Text(String(result.symbol.prefix(2)))
+                            .rouaFont(.captionBold, color: .rouaTextPrimary)
+                            .frame(width: 32, height: 32)
+                            .background(Color.rouaSurfaceLight)
+                            .clipShape(Circle())
 
-                    Spacer()
+                        Spacer()
 
-                    Badge(
-                        text: isPositive ? "↑" : "↓",
-                        variant: isPositive ? .success : .error
-                    )
+                        Badge(
+                            text: isPositive ? "↑" : "↓",
+                            variant: isPositive ? .success : .error
+                        )
+                    }
+
+                    Text(result.symbol)
+                        .rouaFont(.calloutBold, color: .rouaTextPrimary)
+                        .lineLimit(1)
+
+                    HStack {
+                        Text(result.price.asPrice())
+                            .rouaFont(.monoSmall, color: .rouaTextPrimary)
+                            .monospacedDigit()
+
+                        Spacer()
+
+                        Text(result.formattedChangePct)
+                            .rouaFont(.captionBold, color: .rouaPnLColor(value: result.change))
+                            .monospacedDigit()
+                    }
                 }
-
-                Text(result.symbol)
-                    .rouaFont(.calloutBold, color: .rouaTextPrimary)
-                    .lineLimit(1)
-
-                HStack {
-                    Text(result.price.asPrice())
-                        .rouaFont(.monoSmall, color: .rouaTextPrimary)
-                        .monospacedDigit()
-
-                    Spacer()
-
-                    Text(result.formattedChangePct)
-                        .rouaFont(.captionBold, color: .rouaPnLColor(value: result.change))
-                        .monospacedDigit()
-                }
+                .frame(width: 150)
             }
-            .frame(width: 150)
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Section 3: AI Signals

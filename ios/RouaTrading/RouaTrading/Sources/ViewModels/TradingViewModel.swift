@@ -253,7 +253,7 @@ final class TradingViewModel: ObservableObject {
         // Normalize the symbol: ensure it uses the backend's "BTC/USD" format.
         // If the symbol comes from Binance WebSocket (e.g., "BTCUSDT"),
         // convert it to our format by inserting a slash before the quote currency.
-        let normalized: String
+        var normalized: String
         if symbol.contains("/") {
             normalized = symbol.uppercased()
         } else if symbol.count >= 3 {

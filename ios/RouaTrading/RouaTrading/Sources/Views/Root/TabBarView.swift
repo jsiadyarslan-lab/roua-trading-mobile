@@ -232,7 +232,7 @@ struct TabBarView: View {
     private func badge(for tab: RouaTab) -> some View {
         let count: Int = {
             switch tab {
-            case .aiHub:    return activeSignalCount
+            case .trading:  return activeSignalCount
             case .settings: return unreadNotificationCount
             default:        return 0
             }

@@ -167,6 +167,22 @@ struct CandleData: Codable, Identifiable, Hashable {
         }
     }
 
+    // ---- Custom encoder: write `time` as `timestamp` ISO-8601 string ----
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(open, forKey: .open)
+        try container.encode(high, forKey: .high)
+        try container.encode(low, forKey: .low)
+        try container.encode(close, forKey: .close)
+        try container.encode(volume, forKey: .volume)
+        // Encode the unix `time` back as an ISO-8601 `timestamp` string
+        let date = Date(timeIntervalSince1970: TimeInterval(time))
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        try container.encode(formatter.string(from: date), forKey: .timestamp)
+    }
+
     // ---- Direct memberwise init ----
 
     init(time: Int, open: Double, high: Double, low: Double, close: Double, volume: Double) {

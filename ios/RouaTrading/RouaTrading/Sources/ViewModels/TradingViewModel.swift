@@ -253,29 +253,18 @@ final class TradingViewModel: ObservableObject {
         // Normalize the symbol: ensure it uses the backend's "BTC/USD" format.
         // If the symbol comes from Binance WebSocket (e.g., "BTCUSDT"),
         // convert it to our format by inserting a slash before the quote currency.
-        var normalized: String
+        let normalized: String
         if symbol.contains("/") {
             normalized = symbol.uppercased()
-        } else if symbol.count >= 3 {
-            // Try to detect quote currency: USD, USDT, BTC, ETH, etc.
+        } else {
             let upper = symbol.uppercased()
             let quoteCurrencies = ["USDT", "USD", "BUSD", "BTC", "ETH", "BNB"]
-            var found = false
-            for quote in quoteCurrencies {
-                if upper.hasSuffix(quote) {
-                    let base = upper.dropLast(quote.count)
-                    if !base.isEmpty {
-                        normalized = "\(base)/\(quote)"
-                        found = true
-                        break
-                    }
-                }
-            }
-            if !found {
+            let match = quoteCurrencies.first(where: { upper.hasSuffix($0) && upper.dropLast($0.count).isEmpty == false })
+            if let quote = match {
+                normalized = "\(upper.dropLast(quote.count))/\(quote)"
+            } else {
                 normalized = upper
             }
-        } else {
-            normalized = symbol.uppercased()
         }
         
         guard normalized != currentSymbol else { return }

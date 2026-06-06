@@ -452,7 +452,7 @@ final class AIViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let _: Data = try await apiClient.request(
+            let _: Data = try await apiClient.requestRaw(
                 .signalExecute(id: id),
                 body: SignalExecution(credentialId: credentialId, quantity: nil)
             )

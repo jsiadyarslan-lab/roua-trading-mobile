@@ -300,7 +300,9 @@ final class APIClient {
             throw APIError.unexpected("Failed to build URL: \(urlString)")
         }
 
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw APIError.unexpected("Failed to parse URL components for: \(urlString)")
+        }
 
         // Merge default query items with caller-supplied items
         var allQueryItems = endpoint.defaultQueryItems

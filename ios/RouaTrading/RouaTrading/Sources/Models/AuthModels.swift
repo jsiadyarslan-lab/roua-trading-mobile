@@ -23,6 +23,7 @@ struct User: Codable, Identifiable, Hashable, Sendable {
     // ---- CodingKeys (backend may send 'name' instead of 'displayName') ----
     private enum CodingKeys: String, CodingKey {
         case id, email, displayName, tier
+        case name
         case avatarUrl = "avatarUrl"
         case createdAt
     }
@@ -37,7 +38,8 @@ struct User: Codable, Identifiable, Hashable, Sendable {
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
         // Accept 'displayName' or fall back to 'name' for backend compatibility
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
-            ?? (try? container.decode(String.self, forKey: .displayName)) ?? email
+            ?? container.decodeIfPresent(String.self, forKey: .name)
+            ?? email
     }
 
     // Direct memberwise init for programmatic creation

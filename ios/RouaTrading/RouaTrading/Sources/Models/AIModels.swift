@@ -183,8 +183,11 @@ struct Brief: Codable, Identifiable, Hashable {
         models       = try c.decodeIfPresent([ModelAnalysis].self, forKey: .models)
         createdAt    = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
         expiresAt    = try c.decodeIfPresent(String.self, forKey: .expiresAt)
-        // Derive status from isActive if not explicitly provided
-        if let statusVal = try c.decodeIfPresent(BriefStatus.self, forKey: .status) {
+        // Derive status from reviewStatus if present, otherwise from isActive.
+        // Uses try? so that unrecognized status strings (e.g. future backend
+        // values) don't crash the entire brief decoding — falls back to
+        // deriving status from the `isActive` boolean flag instead.
+        if let statusVal = try? c.decodeIfPresent(BriefStatus.self, forKey: .status) {
             status = statusVal
         } else {
             let active = try c.decodeIfPresent(Bool.self, forKey: .isActiveBrief) ?? true
@@ -520,8 +523,9 @@ struct Signal: Codable, Identifiable, Hashable {
         confidence  = try c.decodeIfPresent(Int.self, forKey: .confidence) ?? 50
         source      = try c.decodeIfPresent(String.self, forKey: .source)
         reasoning   = try c.decodeIfPresent(String.self, forKey: .reasoning)
-        // Derive status from isActive if not explicitly provided
-        if let statusVal = try c.decodeIfPresent(SignalStatus.self, forKey: .status) {
+        // Derive status from the status field or isActive flag.
+        // Uses try? so unrecognized status strings don't crash decoding.
+        if let statusVal = try? c.decodeIfPresent(SignalStatus.self, forKey: .status) {
             status = statusVal
         } else {
             let active = try c.decodeIfPresent(Bool.self, forKey: .isActiveSignal) ?? true

@@ -614,8 +614,10 @@ private struct NewsItemRow: View {
 
                     Spacer()
 
-                    Text(item.publishedAt)
-                        .rouaFont(.caption, color: .rouaTextTertiary)
+                    if let publishedAt = item.publishedAt, let date = Date.fromISO8601(publishedAt) {
+                        Text(date.relativeString)
+                            .rouaFont(.caption, color: .rouaTextTertiary)
+                    }
                 }
 
                 // External link

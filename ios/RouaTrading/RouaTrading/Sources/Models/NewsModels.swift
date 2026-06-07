@@ -50,7 +50,7 @@ struct NewsItem: Codable, Identifiable, Hashable {
     let category: String?
     /// Arabic category name.
     let categoryAr: String?
-    let publishedAt: String
+    let publishedAt: String?
     /// News type, e.g. "live".
     let newsType: String?
     /// Language code.
@@ -109,7 +109,7 @@ struct NewsItem: Codable, Identifiable, Hashable {
         impactLevel         = try c.decodeIfPresent(String.self, forKey: .impactLevel)
         category            = try c.decodeIfPresent(String.self, forKey: .category)
         categoryAr          = try c.decodeIfPresent(String.self, forKey: .categoryAr)
-        publishedAt         = try c.decode(String.self, forKey: .publishedAt)
+        publishedAt         = try c.decodeIfPresent(String.self, forKey: .publishedAt)
         newsType            = try c.decodeIfPresent(String.self, forKey: .newsType)
         lang                = try c.decodeIfPresent(String.self, forKey: .lang)
         keyTakeaways        = try c.decodeIfPresent([String].self, forKey: .keyTakeaways)

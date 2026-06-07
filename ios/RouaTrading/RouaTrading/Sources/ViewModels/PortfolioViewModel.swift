@@ -66,10 +66,10 @@ final class PortfolioViewModel: ObservableObject {
 
     /// Loads all portfolio data in parallel.
     func loadAll() {
-        Task {
-            isLoading = true
-            errorMessage = nil
+        isLoading = true
+        errorMessage = nil
 
+        Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.loadCredentials() }
                 group.addTask { await self.loadBalances() }
@@ -133,11 +133,29 @@ final class PortfolioViewModel: ObservableObject {
                 forKey: CacheKeys.agentStatus(),
                 ttl: AppConfig.defaultCacheTimeout
             ) {
-                try await self.apiClient.request(.agentStatus)
+                // The backend may return `{"success":true,"data":null}` when no
+                // agent is running.  APIClient's smartDecode would try to decode
+                // `AgentState` from `null` which fails.  Catch that and provide a
+                // default inactive state instead.
+                do {
+                    return try await self.apiClient.request(.agentStatus)
+                } catch {
+                    // Return a default inactive agent state on decode failure
+                    // (null data from backend)
+                    return AgentState(isActive: false, strategy: nil, startTime: nil,
+                                      totalTrades: nil, winRate: nil, totalPnl: nil,
+                                      currentPositions: nil, settings: nil)
+                }
             }
             self.agentState = state
         } catch {
             logger.error("Failed to load agent status: \(error.localizedDescription)")
+            // Provide a default inactive state
+            if agentState == nil {
+                self.agentState = AgentState(isActive: false, strategy: nil, startTime: nil,
+                                              totalTrades: nil, winRate: nil, totalPnl: nil,
+                                              currentPositions: nil, settings: nil)
+            }
         }
     }
 

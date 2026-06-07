@@ -270,7 +270,7 @@ extension APIEndpoint {
         case .tradingPositionLevels(let id):   return "/trading/positions/\(id)/levels"
         case .tradingHistory:                  return "/trading/history"
         case .tradingTrades:                   return "/trading/trades"
-        case .tradingRiskParameters:           return "/trading/risk-parameters"
+        case .tradingRiskParameters:           return "/trading/risk/parameters"
         case .tradingPositionSize:             return "/trading/position-size"
 
         // Trading V2
@@ -282,8 +282,12 @@ extension APIEndpoint {
         case .tradingV2Portfolio:              return "/trading/v2/portfolio"
 
         // Exchange
-        case .exchangeQuote(let symbol):       return "/exchange/quote/\(symbol)"
-        case .exchangeHistory(let symbol, _, _): return "/exchange/history/\(symbol)"
+        // NOTE: Symbols like "BTC/USD" contain a slash that must be percent-encoded
+        // in the URL path so the backend receives a single path parameter.
+        // "BTC/USD" → "BTC%2FUSD" — otherwise the backend sees "BTC" + "USD" as
+        // two separate segments and returns 404.
+        case .exchangeQuote(let symbol):       return "/exchange/quote/\(symbol.replacingOccurrences(of: "/", with: "%2F"))"
+        case .exchangeHistory(let symbol, _, _): return "/exchange/history/\(symbol.replacingOccurrences(of: "/", with: "%2F"))"
         case .exchangeAdapters:                return "/exchange/adapters"
 
         // Scanner
@@ -690,9 +694,12 @@ extension APIEndpoint {
     /// The `APIClient` merges these with any caller-supplied `queryItems`.
     var defaultQueryItems: [URLQueryItem] {
         switch self {
-        case .exchangeHistory(let symbol, let interval, let limit):
+        case .exchangeHistory(_, let interval, let limit):
+            // NOTE: `symbol` is NOT included as a query parameter because it is
+            // already encoded in the URL path (`/exchange/history/BTC%2FUSD`).
+            // Sending it again as a query param is redundant and can confuse the
+            // backend's path-parameter extraction.
             var items: [URLQueryItem] = [
-                URLQueryItem(name: "symbol", value: symbol),
                 URLQueryItem(name: "interval", value: interval),
             ]
             if let limit { items.append(URLQueryItem(name: "limit", value: String(limit))) }

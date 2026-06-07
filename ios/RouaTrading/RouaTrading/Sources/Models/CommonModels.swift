@@ -237,12 +237,21 @@ enum CandleInterval: String, Codable, CaseIterable, Identifiable {
 // MARK: - Signal Direction (shared by AI & Signal models)
 
 /// Directional bias shared across signals, briefs, and consensus.
+///
+/// Custom decoder handles case-insensitive matching and maps unknown
+/// values to `.neutral` instead of throwing a decoding error.
 enum SignalDirection: String, Codable {
     case strongBuy  = "STRONG_BUY"
     case buy        = "BUY"
     case neutral    = "NEUTRAL"
     case sell       = "SELL"
     case strongSell = "STRONG_SELL"
+    /// Fallback for unknown direction values.
+    case unknown    = "__UNKNOWN__"
+
+    /// Custom decoder that handles case-insensitive matching and
+    /// falls back to `.neutral` for unrecognized values.
+    init(from decoder: Decoder) throws {\n        let rawValue = try decoder.singleValueContainer().decode(String.self)\n        switch rawValue.uppercased() {\n        case "STRONG_BUY", "VERY_BULLISH": self = .strongBuy\n        case "BUY", "BULLISH":              self = .buy\n        case "NEUTRAL":                       self = .neutral\n        case "SELL", "BEARISH":              self = .sell\n        case "STRONG_SELL", "VERY_BEARISH":  self = .strongSell\n        default:                              self = .neutral\n        }\n    }
 
     var displayName: String {
         switch self {
@@ -307,16 +316,29 @@ enum BriefDirection: String, Codable {
 /// Lifecycle status of an AI brief.
 enum BriefStatus: String, Codable {
     case active    = "ACTIVE"
+    case modified  = "MODIFIED"
     case expired   = "EXPIRED"
     case executed  = "EXECUTED"
     case dismissed = "DISMISSED"
+    /// Fallback for any unknown status values the backend may introduce.
+    case unknown   = "__UNKNOWN__"
+
+    /// Custom decoder that falls back to `.active` for unrecognized values
+    /// instead of throwing a decoding error (which would crash the entire
+    /// brief list). The backend may introduce new statuses at any time.
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = BriefStatus(rawValue: rawValue) ?? .active
+    }
 
     var displayName: String {
         switch self {
         case .active:    return "Active"
+        case .modified: return "Modified"
         case .expired:   return "Expired"
         case .executed:  return "Executed"
         case .dismissed: return "Dismissed"
+        case .unknown:   return "Unknown"
         }
     }
 }
@@ -326,16 +348,31 @@ enum BriefStatus: String, Codable {
 /// Lifecycle status of a trading signal.
 enum SignalStatus: String, Codable {
     case active    = "ACTIVE"
+    case modified  = "MODIFIED"
     case executed  = "EXECUTED"
     case expired   = "EXPIRED"
     case cancelled = "CANCELLED"
+    case dismissed = "DISMISSED"
+    /// Fallback for any unknown status values the backend may introduce.
+    case unknown   = "__UNKNOWN__"
+
+    /// Custom decoder that falls back to `.active` for unrecognized values
+    /// instead of throwing a decoding error (which would crash the entire
+    /// signal list).
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = SignalStatus(rawValue: rawValue) ?? .active
+    }
 
     var displayName: String {
         switch self {
         case .active:    return "Active"
+        case .modified: return "Modified"
         case .executed:  return "Executed"
         case .expired:   return "Expired"
         case .cancelled: return "Cancelled"
+        case .dismissed: return "Dismissed"
+        case .unknown:   return "Unknown"
         }
     }
 }
@@ -343,10 +380,25 @@ enum SignalStatus: String, Codable {
 // MARK: - Sentiment
 
 /// Sentiment polarity used in news / social analysis.
+///
+/// The backend may send uppercase ("POSITIVE"), lowercase ("positive"),
+/// or title-case ("Positive") values. The custom decoder handles all
+/// variants gracefully, falling back to `.neutral` for unrecognized values.
 enum Sentiment: String, Codable {
     case positive = "POSITIVE"
     case negative = "NEGATIVE"
     case neutral  = "NEUTRAL"
+
+    /// Custom decoder that handles case-insensitive matching.
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue.uppercased() {
+        case "POSITIVE": self = .positive
+        case "NEGATIVE": self = .negative
+        case "NEUTRAL":  self = .neutral
+        default:        self = .neutral
+        }
+    }
 
     var displayName: String {
         switch self {

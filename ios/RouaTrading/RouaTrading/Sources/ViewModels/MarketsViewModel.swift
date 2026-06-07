@@ -71,10 +71,10 @@ final class MarketsViewModel: ObservableObject {
 
     /// Loads scanner results, heatmap, overview, and news in parallel.
     func loadAll() {
-        Task {
-            isLoading = true
-            errorMessage = nil
+        isLoading = true
+        errorMessage = nil
 
+        Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.loadScanner() }
                 group.addTask { await self.loadHeatmap() }

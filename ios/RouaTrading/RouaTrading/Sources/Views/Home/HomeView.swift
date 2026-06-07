@@ -479,7 +479,7 @@ struct HomeView: View {
                             variant: news.sentiment == .positive ? .success : news.sentiment == .negative ? .error : .neutral
                         )
 
-                        if let date = Date.fromISO8601(news.publishedAt) {
+                        if let publishedAt = news.publishedAt, let date = Date.fromISO8601(publishedAt) {
                             Text(date.relativeString)
                                 .rouaFont(.footnote, color: .rouaTextTertiary)
                         }

@@ -325,7 +325,7 @@ struct PerformanceMetrics: Codable, Hashable {
     let totalTrades: Int
     let winRate: Double
     let totalPnl: Double
-    let totalPnlPct: Double?
+    var totalPnlPct: Double?
     let sharpeRatio: Double?
     let maxDrawdown: Double?
     let avgWin: Double

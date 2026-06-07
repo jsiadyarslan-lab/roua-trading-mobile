@@ -153,6 +153,10 @@ struct RiskReport: Codable {
         case aiAnalysis
         case totalValue
         case currency
+    }
+
+    /// Coding key used only during decoding to access the nested `metrics` object.
+    private enum MetricsCodingKey: String, CodingKey {
         case metrics
     }
 
@@ -177,7 +181,8 @@ struct RiskReport: Codable {
 
         // The backend nests some values inside a "metrics" object.
         // Extract them if present; fall back to flat fields or defaults.
-        if let metricsContainer = try? c.nestedContainer(keyedBy: MetricsKeys.self, forKey: .metrics) {
+        let mc = try decoder.container(keyedBy: MetricsCodingKey.self)
+        if let metricsContainer = try? mc.nestedContainer(keyedBy: MetricsKeys.self, forKey: .metrics) {
             positionConcentration = try metricsContainer.decodeIfPresent(Double.self, forKey: .concentrationRisk) ?? 0
             diversificationScore  = try metricsContainer.decodeIfPresent(Double.self, forKey: .diversificationScore) ?? 0
             leverageExposure      = try metricsContainer.decodeIfPresent(Double.self, forKey: .largestPositionWeight) ?? 0
@@ -188,6 +193,21 @@ struct RiskReport: Codable {
             leverageExposure      = try c.decodeIfPresent(Double.self, forKey: .leverageExposure) ?? 0
             liquidityRisk         = try c.decodeIfPresent(Double.self, forKey: .liquidityRisk) ?? 0
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(summary, forKey: .summary)
+        try c.encode(overallRisk, forKey: .overallRisk)
+        try c.encode(riskLevel, forKey: .riskLevel)
+        try c.encode(positionConcentration, forKey: .positionConcentration)
+        try c.encode(leverageExposure, forKey: .leverageExposure)
+        try c.encode(liquidityRisk, forKey: .liquidityRisk)
+        try c.encode(diversificationScore, forKey: .diversificationScore)
+        try c.encode(recommendations, forKey: .recommendations)
+        try c.encodeIfPresent(aiAnalysis, forKey: .aiAnalysis)
+        try c.encodeIfPresent(totalValue, forKey: .totalValue)
+        try c.encodeIfPresent(currency, forKey: .currency)
     }
 
     /// Coding keys for the nested `metrics` object.
@@ -350,6 +370,10 @@ struct PerformanceMetrics: Codable, Hashable {
         case consecutiveLosses
         case averageHoldingTime
         case period
+    }
+
+    /// Coding key used only during decoding to read the backend's `maxDrawdownPercent` field.
+    private enum DecodingOnlyKeys: String, CodingKey {
         case maxDrawdownPercent
     }
 
@@ -374,9 +398,34 @@ struct PerformanceMetrics: Codable, Hashable {
         averageHoldingTime  = try c.decodeIfPresent(Double.self, forKey: .averageHoldingTime)
         period              = try c.decodeIfPresent(String.self, forKey: .period)
         // Derive totalPnlPct from maxDrawdownPercent if not present
-        if totalPnlPct == nil, let mddPct = try c.decodeIfPresent(Double.self, forKey: .maxDrawdownPercent) {
-            totalPnlPct = mddPct
+        if totalPnlPct == nil {
+            let extra = try decoder.container(keyedBy: DecodingOnlyKeys.self)
+            if let mddPct = try extra.decodeIfPresent(Double.self, forKey: .maxDrawdownPercent) {
+                totalPnlPct = mddPct
+            }
         }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(totalTrades, forKey: .totalTrades)
+        try c.encode(winRate, forKey: .winRate)
+        try c.encode(totalPnl, forKey: .totalPnl)
+        try c.encodeIfPresent(totalPnlPct, forKey: .totalPnlPct)
+        try c.encodeIfPresent(sharpeRatio, forKey: .sharpeRatio)
+        try c.encodeIfPresent(maxDrawdown, forKey: .maxDrawdown)
+        try c.encode(avgWin, forKey: .avgWin)
+        try c.encode(avgLoss, forKey: .avgLoss)
+        try c.encodeIfPresent(profitFactor, forKey: .profitFactor)
+        try c.encodeIfPresent(dailyReturn, forKey: .dailyReturn)
+        try c.encodeIfPresent(winningTrades, forKey: .winningTrades)
+        try c.encodeIfPresent(losingTrades, forKey: .losingTrades)
+        try c.encodeIfPresent(bestTrade, forKey: .bestTrade)
+        try c.encodeIfPresent(worstTrade, forKey: .worstTrade)
+        try c.encodeIfPresent(consecutiveWins, forKey: .consecutiveWins)
+        try c.encodeIfPresent(consecutiveLosses, forKey: .consecutiveLosses)
+        try c.encodeIfPresent(averageHoldingTime, forKey: .averageHoldingTime)
+        try c.encodeIfPresent(period, forKey: .period)
     }
 
     /// Formatted win rate percentage.

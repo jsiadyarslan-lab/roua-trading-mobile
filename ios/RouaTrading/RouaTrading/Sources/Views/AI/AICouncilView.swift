@@ -316,9 +316,11 @@ private struct StatusBadge: View {
     private var variant: BadgeVariant {
         switch status {
         case .active:    return .success
+        case .modified:  return .info
         case .expired:   return .neutral
         case .executed:  return .info
         case .dismissed: return .warning
+        case .unknown:   return .neutral
         }
     }
 

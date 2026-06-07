@@ -260,6 +260,7 @@ enum SignalDirection: String, Codable {
         case .neutral:    return "Neutral"
         case .sell:       return "Sell"
         case .strongSell: return "Strong Sell"
+        case .unknown:    return "Unknown"
         }
     }
 
@@ -271,6 +272,7 @@ enum SignalDirection: String, Codable {
         case .neutral:    return 0
         case .sell:       return -1
         case .strongSell: return -2
+        case .unknown:    return 0
         }
     }
 }

@@ -398,6 +398,7 @@ private struct ConfidenceRing: View {
         case .strongBuy, .buy:   return .rouaProfit
         case .neutral:           return .rouaWarning
         case .sell, .strongSell: return .rouaLoss
+        case .unknown:           return .rouaNeutral
         }
     }
 

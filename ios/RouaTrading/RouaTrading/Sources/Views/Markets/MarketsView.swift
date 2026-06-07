@@ -325,6 +325,7 @@ struct SignalBadge: View {
         case .neutral:    return .rouaNeutral
         case .sell:       return .rouaLoss.opacity(0.7)
         case .strongSell: return .rouaLoss
+        case .unknown:    return .rouaNeutral
         }
     }
 
@@ -335,6 +336,7 @@ struct SignalBadge: View {
         case .neutral:    return .rouaNeutral.opacity(0.15)
         case .sell:       return .rouaLossLight.opacity(0.6)
         case .strongSell: return .rouaLossLight
+        case .unknown:    return .rouaNeutral.opacity(0.15)
         }
     }
 

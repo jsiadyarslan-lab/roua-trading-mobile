@@ -299,9 +299,12 @@ private struct SignalHistoryCard: View {
     private var statusVariant: BadgeVariant {
         switch signal.status {
         case .active:    return .success
+        case .modified:  return .info
         case .executed:  return .info
         case .expired:   return .neutral
         case .cancelled: return .warning
+        case .dismissed: return .neutral
+        case .unknown:   return .neutral
         case nil:        return .neutral
         }
     }

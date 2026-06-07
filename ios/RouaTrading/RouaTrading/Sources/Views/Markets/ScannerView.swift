@@ -343,6 +343,7 @@ private struct DetailedScannerRow: View {
         case .strongBuy, .buy:   return "arrowtriangle.up.fill"
         case .neutral:           return "minus"
         case .sell, .strongSell: return "arrowtriangle.down.fill"
+        case .unknown:           return "questionmark"
         }
     }
 }

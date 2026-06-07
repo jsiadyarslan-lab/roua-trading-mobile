@@ -129,7 +129,6 @@ struct CandleData: Codable, Identifiable, Hashable {
         case time        // local unix-time key (set in decoder)
         case timestamp   // backend ISO-8601 key
         case open, high, low, close, volume
-        case source
     }
 
     // ---- Custom decoder: convert ISO-8601 `timestamp` → Int `time` ----
@@ -567,7 +566,10 @@ struct DeepAnalysis: Codable, Identifiable, Hashable {
         case aiSentiment
         case riskLevel
         case marketOpen
-        // Nested backend keys
+    }
+
+    /// Decode-only keys for accessing nested backend objects.
+    private enum NestedKeys: String, CodingKey {
         case quote
         case technical
         case signal
@@ -590,7 +592,8 @@ struct DeepAnalysis: Codable, Identifiable, Hashable {
         analysis = try c.decodeIfPresent(String.self, forKey: .analysis) ?? ""
 
         // Extract signal data from nested "signal" object
-        if let signalContainer = try? c.nestedContainer(keyedBy: SignalKeys.self, forKey: .signal) {
+        let nc = try decoder.container(keyedBy: NestedKeys.self)
+        if let signalContainer = try? nc.nestedContainer(keyedBy: SignalKeys.self, forKey: .signal) {
             recommendation = try signalContainer.decodeIfPresent(SignalDirection.self, forKey: .direction) ?? .neutral
             confidence     = try signalContainer.decodeIfPresent(Int.self, forKey: .confidence) ?? 0
             support        = try signalContainer.decodeIfPresent([Double].self, forKey: .supportLevels)
@@ -605,8 +608,8 @@ struct DeepAnalysis: Codable, Identifiable, Hashable {
         }
 
         // Extract indicators from nested "technical" object
-        if let techContainer = try? c.nestedContainer(keyedBy: AnalysisIndicators.CodingKeys.self, forKey: .technical) {
-            indicators = try AnalysisIndicators(from: techContainer)
+        if let techContainer = try? nc.nestedContainer(keyedBy: AnalysisIndicators.CodingKeys.self, forKey: .technical) {
+            indicators = AnalysisIndicators(fromTechContainer: techContainer)
         } else {
             indicators = try c.decodeIfPresent(AnalysisIndicators.self, forKey: .indicators) ?? AnalysisIndicators()
         }
@@ -619,6 +622,23 @@ struct DeepAnalysis: Codable, Identifiable, Hashable {
         case timeframe
         case supportLevels = "stopLoss"
         case resistanceLevels = "takeProfit"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(symbol, forKey: .symbol)
+        try c.encode(analysis, forKey: .analysis)
+        try c.encode(recommendation, forKey: .recommendation)
+        try c.encode(confidence, forKey: .confidence)
+        try c.encodeIfPresent(support, forKey: .support)
+        try c.encodeIfPresent(resistance, forKey: .resistance)
+        try c.encode(indicators, forKey: .indicators)
+        try c.encode(timeframe, forKey: .timeframe)
+        try c.encode(timestamp, forKey: .timestamp)
+        try c.encodeIfPresent(aiModel, forKey: .aiModel)
+        try c.encodeIfPresent(aiSentiment, forKey: .aiSentiment)
+        try c.encodeIfPresent(riskLevel, forKey: .riskLevel)
+        try c.encodeIfPresent(marketOpen, forKey: .marketOpen)
     }
 }
 
@@ -677,34 +697,55 @@ struct AnalysisIndicators: Codable, Hashable {
         // Backend uses "stochK" / "stochD" — map to our names
         case stochasticK = "stochK"
         case stochasticD = "stochD"
-        // Backend-specific keys we don't use but need to avoid crashing
-        case bollingerPosition
-        case bollingerBandwidth
-        case adx
-        case adxTrend
-        case atrVolatility
-        case vwapPosition
-        case technicalScore
-        case summary
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        rsi              = try c.decodeIfPresent(Double.self, forKey: .rsi)
-        macd             = try c.decodeIfPresent(Double.self, forKey: .macd)
-        macdSignal       = try c.decodeIfPresent(Double.self, forKey: .macdSignal)
-        macdHistogram    = try c.decodeIfPresent(Double.self, forKey: .macdHistogram)
-        sma20            = try c.decodeIfPresent(Double.self, forKey: .sma20)
-        sma50            = try c.decodeIfPresent(Double.self, forKey: .sma50)
-        sma200           = try c.decodeIfPresent(Double.self, forKey: .sma200)
-        ema12            = try c.decodeIfPresent(Double.self, forKey: .ema12)
-        ema26            = try c.decodeIfPresent(Double.self, forKey: .ema26)
-        bollingerUpper   = try c.decodeIfPresent(Double.self, forKey: .bollingerUpper)
-        bollingerLower   = try c.decodeIfPresent(Double.self, forKey: .bollingerLower)
-        bollingerMiddle  = try c.decodeIfPresent(Double.self, forKey: .bollingerMiddle)
-        atr              = try c.decodeIfPresent(Double.self, forKey: .atr)
-        stochasticK      = try c.decodeIfPresent(Double.self, forKey: .stochasticK)
-        stochasticD      = try c.decodeIfPresent(Double.self, forKey: .stochasticD)
+        self.init(fromContainer: c)
+    }
+
+    /// Init from a KeyedDecodingContainer (used by DeepAnalysis when decoding
+    /// indicators from a nested "technical" JSON object).
+    init(fromTechContainer c: KeyedDecodingContainer<CodingKeys>) {
+        self.init(fromContainer: c)
+    }
+
+    /// Shared init logic used by both Decoder-based and container-based inits.
+    private init(fromContainer c: KeyedDecodingContainer<CodingKeys>) {
+        rsi              = try? c.decodeIfPresent(Double.self, forKey: .rsi)
+        macd             = try? c.decodeIfPresent(Double.self, forKey: .macd)
+        macdSignal       = try? c.decodeIfPresent(Double.self, forKey: .macdSignal)
+        macdHistogram    = try? c.decodeIfPresent(Double.self, forKey: .macdHistogram)
+        sma20            = try? c.decodeIfPresent(Double.self, forKey: .sma20)
+        sma50            = try? c.decodeIfPresent(Double.self, forKey: .sma50)
+        sma200           = try? c.decodeIfPresent(Double.self, forKey: .sma200)
+        ema12            = try? c.decodeIfPresent(Double.self, forKey: .ema12)
+        ema26            = try? c.decodeIfPresent(Double.self, forKey: .ema26)
+        bollingerUpper   = try? c.decodeIfPresent(Double.self, forKey: .bollingerUpper)
+        bollingerLower   = try? c.decodeIfPresent(Double.self, forKey: .bollingerLower)
+        bollingerMiddle  = try? c.decodeIfPresent(Double.self, forKey: .bollingerMiddle)
+        atr              = try? c.decodeIfPresent(Double.self, forKey: .atr)
+        stochasticK      = try? c.decodeIfPresent(Double.self, forKey: .stochasticK)
+        stochasticD      = try? c.decodeIfPresent(Double.self, forKey: .stochasticD)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(rsi, forKey: .rsi)
+        try c.encodeIfPresent(macd, forKey: .macd)
+        try c.encodeIfPresent(macdSignal, forKey: .macdSignal)
+        try c.encodeIfPresent(macdHistogram, forKey: .macdHistogram)
+        try c.encodeIfPresent(sma20, forKey: .sma20)
+        try c.encodeIfPresent(sma50, forKey: .sma50)
+        try c.encodeIfPresent(sma200, forKey: .sma200)
+        try c.encodeIfPresent(ema12, forKey: .ema12)
+        try c.encodeIfPresent(ema26, forKey: .ema26)
+        try c.encodeIfPresent(bollingerUpper, forKey: .bollingerUpper)
+        try c.encodeIfPresent(bollingerLower, forKey: .bollingerLower)
+        try c.encodeIfPresent(bollingerMiddle, forKey: .bollingerMiddle)
+        try c.encodeIfPresent(atr, forKey: .atr)
+        try c.encodeIfPresent(stochasticK, forKey: .stochasticK)
+        try c.encodeIfPresent(stochasticD, forKey: .stochasticD)
     }
 
     /// Empty init for fallback

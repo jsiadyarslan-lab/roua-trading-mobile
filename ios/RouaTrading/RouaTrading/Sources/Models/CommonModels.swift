@@ -251,7 +251,17 @@ enum SignalDirection: String, Codable {
 
     /// Custom decoder that handles case-insensitive matching and
     /// falls back to `.neutral` for unrecognized values.
-    init(from decoder: Decoder) throws {\n        let rawValue = try decoder.singleValueContainer().decode(String.self)\n        switch rawValue.uppercased() {\n        case "STRONG_BUY", "VERY_BULLISH": self = .strongBuy\n        case "BUY", "BULLISH":              self = .buy\n        case "NEUTRAL":                       self = .neutral\n        case "SELL", "BEARISH":              self = .sell\n        case "STRONG_SELL", "VERY_BEARISH":  self = .strongSell\n        default:                              self = .neutral\n        }\n    }
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        switch rawValue.uppercased() {
+        case "STRONG_BUY", "VERY_BULLISH": self = .strongBuy
+        case "BUY", "BULLISH":              self = .buy
+        case "NEUTRAL":                       self = .neutral
+        case "SELL", "BEARISH":              self = .sell
+        case "STRONG_SELL", "VERY_BEARISH":  self = .strongSell
+        default:                              self = .neutral
+        }
+    }
 
     var displayName: String {
         switch self {

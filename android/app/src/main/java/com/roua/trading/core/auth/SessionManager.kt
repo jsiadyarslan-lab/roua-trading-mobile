@@ -33,25 +33,41 @@ class SessionManager @Inject constructor(
 
     companion object {
         private const val KEY_SESSION_TOKEN = "roua_session_token"
+        private const val KEY_REFRESH_TOKEN = "roua_refresh_token"
         private const val KEY_USER_EMAIL = "roua_user_email"
         private const val KEY_USER_TIER = "roua_user_tier"
     }
 
     // --- TokenProvider implementation (used by NetworkModule interceptor) ---
     override fun getSessionToken(): String? = prefs.getString(KEY_SESSION_TOKEN, null)
+    override fun getRefreshToken(): String? = prefs.getString(KEY_REFRESH_TOKEN, null)
 
     // --- Public API ---
-    fun saveSession(token: String, email: String? = null, tier: String? = null) {
+    fun saveSession(token: String, refreshToken: String? = null, email: String? = null, tier: String? = null) {
         prefs.edit().apply {
             putString(KEY_SESSION_TOKEN, token)
+            refreshToken?.let { putString(KEY_REFRESH_TOKEN, it) }
             email?.let { putString(KEY_USER_EMAIL, it) }
             tier?.let { putString(KEY_USER_TIER, it) }
             apply()
         }
     }
 
+    fun saveRefreshToken(refreshToken: String) {
+        prefs.edit().putString(KEY_REFRESH_TOKEN, refreshToken).apply()
+    }
+
     fun clearSession() {
         prefs.edit().clear().apply()
+    }
+
+    // --- TokenProvider saveTokens (used by NetworkModule authenticator) ---
+    override fun saveTokens(sessionToken: String, refreshToken: String) {
+        prefs.edit().apply {
+            putString(KEY_SESSION_TOKEN, sessionToken)
+            putString(KEY_REFRESH_TOKEN, refreshToken)
+            apply()
+        }
     }
 
     fun getUserEmail(): String? = prefs.getString(KEY_USER_EMAIL, null)

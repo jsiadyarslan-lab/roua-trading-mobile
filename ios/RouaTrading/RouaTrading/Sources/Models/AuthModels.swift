@@ -121,7 +121,7 @@ struct AuthVerifyResponse: Codable {
 
 // MARK: - Session Response
 
-/// Returned by the `GET /auth/session` endpoint to check current auth state.
+/// Returned by the `GET /auth/me` endpoint to check current auth state.
 struct SessionResponse: Codable {
     let authenticated: Bool
     let user: User?

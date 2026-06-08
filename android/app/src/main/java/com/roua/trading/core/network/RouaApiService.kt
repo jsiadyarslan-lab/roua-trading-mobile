@@ -15,14 +15,21 @@ interface RouaApiService {
     @POST("auth/verify")
     suspend fun verify(@Body request: AuthVerifyRequest): AuthVerifyResponse
     
-    @GET("auth/session")
-    suspend fun getSession(): AuthVerifyResponse
+    @GET("auth/me")
+    suspend fun getSession(): AuthMeResponse
     
-    @DELETE("auth/session")
-    suspend fun logout(): AuthVerifyResponse
+    @DELETE("auth/me")
+    suspend fun logout(): AuthMeResponse
     
     @POST("auth/refresh")
-    suspend fun refreshSession(): AuthVerifyResponse
+    suspend fun refreshSession(): RefreshResponse
+    
+    // MARK: - OTP Auth
+    @POST("auth/otp/send")
+    suspend fun sendOtp(@Body request: OtpSendRequest): OtpSendResponse
+    
+    @POST("auth/otp/verify")
+    suspend fun verifyOtp(@Body request: OtpVerifyRequest): AuthMeResponse
     
     // MARK: - Trading V1
     @GET("trading/account")

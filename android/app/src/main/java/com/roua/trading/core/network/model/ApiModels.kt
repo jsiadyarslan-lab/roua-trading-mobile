@@ -33,7 +33,38 @@ data class ChallengeResponse(val challenge: String, val rpId: String? = null, va
 data class AuthVerifyResponse(val success: Boolean, val user: AuthUser? = null)
 
 @Serializable
+data class AuthMeResponse(
+    val authenticated: Boolean = false,
+    val user: AuthUser? = null,
+    val sessionToken: String? = null,
+    val refreshToken: String? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class RefreshResponse(
+    val refreshed: Boolean? = null,
+    val authenticated: Boolean? = null,
+    val user: AuthUser? = null,
+    val data: RefreshTokenData? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class RefreshTokenData(val token: String, val refresh: String)
+
+@Serializable
 data class AuthUser(val id: String, val email: String, val displayName: String? = null, val tier: String = "FREE")
+
+// MARK: - OTP Auth
+@Serializable
+data class OtpSendRequest(val email: String)
+
+@Serializable
+data class OtpSendResponse(val success: Boolean, val message: String? = null)
+
+@Serializable
+data class OtpVerifyRequest(val email: String, val otp: String)
 
 // MARK: - Trading
 @Serializable

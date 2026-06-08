@@ -78,11 +78,10 @@ struct OtpSendResponse: Codable {
     let message: String?
 }
 
-/// OTP verify response — backend returns { authenticated, user, isGuest }.
+/// OTP verify response — backend returns { authenticated, user }.
 struct OtpVerifyResponse: Codable {
     let authenticated: Bool
     let user: User?
-    let isGuest: Bool?
 }
 
 /// Session info returned by the backend.

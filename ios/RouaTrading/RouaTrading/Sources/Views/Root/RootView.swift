@@ -52,8 +52,7 @@ struct RootView: View {
         }
         .onAppear {
             // Validate session in the background — don't block the UI.
-            // Guest sessions are disabled — users must sign in to access
-            // authenticated features. Public data is still available.
+            // Users must sign in to access authenticated features.
             authViewModel.validateSession()
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in

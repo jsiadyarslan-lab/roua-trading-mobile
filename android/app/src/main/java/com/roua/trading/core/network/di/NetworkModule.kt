@@ -38,17 +38,75 @@ object NetworkModule {
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BODY
             })
+            // Auth + Platform headers interceptor
             .addInterceptor { chain ->
                 val original = chain.request()
                 val sessionToken = getTokenFromStorage()
+                val refreshToken = getRefreshTokenFromStorage()
                 val request = original.newBuilder().apply {
                     header("Content-Type", "application/json")
+                    header("X-Platform", "android")  // Required for mobile token-in-body responses
                     if (sessionToken != null) {
                         header("Authorization", "Bearer $sessionToken")
                         header("x-roua-session", sessionToken)
                     }
+                    if (refreshToken != null) {
+                        header("x-roua-refresh", refreshToken)
+                    }
                 }.build()
                 chain.proceed(request)
+            }
+            // Auto token refresh interceptor — on 401, try refresh then retry
+            .authenticator { route, response ->
+                val sessionToken = getTokenFromStorage() ?: return@authenticator null
+                val refreshToken = getRefreshTokenFromStorage() ?: return@authenticator null
+                
+                // Don't try to refresh if this is already a refresh request
+                if (response.request.url.encodedPath.contains("auth/refresh")) {
+                    return@authenticator null
+                }
+                
+                // Don't try more than once
+                if (responseCount(response) >= 3) {
+                    return@authenticator null
+                }
+                
+                // Attempt refresh via the /api/auth/refresh endpoint
+                try {
+                    val refreshRequest = okhttp3.Request.Builder()
+                        .url("${BASE_URL}auth/refresh")
+                        .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+                        .header("Authorization", "Bearer $refreshToken")
+                        .header("x-roua-refresh", refreshToken)
+                        .header("x-roua-session", sessionToken)
+                        .header("X-Platform", "android")
+                        .build()
+                    
+                    val refreshResponse = response.request.newBuilder().build()
+                    val client = response.call.client
+                    val refreshCall = client.newCall(refreshRequest)
+                    val refreshResult = refreshCall.execute()
+                    
+                    if (refreshResult.isSuccessful) {
+                        val body = refreshResult.body?.string() ?: return@authenticator null
+                        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                        val parsed = json.decodeFromString<RefreshResponse>(body)
+                        
+                        if (parsed.refreshed == true && parsed.data != null) {
+                            // Save new tokens
+                            saveTokensToStorage(parsed.data.token, parsed.data.refresh)
+                            
+                            // Retry original request with new token
+                            return@authenticator response.request.newBuilder()
+                                .header("Authorization", "Bearer ${parsed.data.token}")
+                                .header("x-roua-session", parsed.data.token)
+                                .build()
+                        }
+                    }
+                    null
+                } catch (e: Exception) {
+                    null
+                }
             }
             .build()
     }
@@ -69,9 +127,17 @@ object NetworkModule {
         return retrofit.create(RouaApiService::class.java)
     }
     
+    private fun responseCount(response: okhttp3.Response): Int {
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) {
+            count++
+            prior = prior.priorResponse
+        }
+        return count
+    }
+    
     private fun getTokenFromStorage(): String? {
-        // Reads session token from EncryptedSharedPreferences via Hilt context
-        // Fallback: check system properties for debug tokens
         return try {
             val context = dagger.hilt.android.EntryPointAccessors.fromApplication(
                 android.app.Application::class.java,
@@ -83,6 +149,28 @@ object NetworkModule {
         }
     }
     
+    private fun getRefreshTokenFromStorage(): String? {
+        return try {
+            val context = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                android.app.Application::class.java,
+                TokenProviderEntryPoint::class.java
+            )
+            context.tokenProvider().getRefreshToken()
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    private fun saveTokensToStorage(sessionToken: String, refreshToken: String) {
+        try {
+            val context = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                android.app.Application::class.java,
+                TokenProviderEntryPoint::class.java
+            )
+            context.tokenProvider().saveTokens(sessionToken, refreshToken)
+        } catch (_: Exception) {}
+    }
+    
     @dagger.hilt.EntryPoint
     @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
     interface TokenProviderEntryPoint {
@@ -91,5 +179,20 @@ object NetworkModule {
     
     interface TokenProvider {
         fun getSessionToken(): String?
+        fun getRefreshToken(): String?
+        fun saveTokens(sessionToken: String, refreshToken: String)
     }
+    
+    // Models for refresh response parsing
+    @kotlinx.serialization.Serializable
+    data class RefreshResponse(
+        val refreshed: Boolean? = null,
+        val data: RefreshData? = null
+    )
+    
+    @kotlinx.serialization.Serializable
+    data class RefreshData(
+        val token: String,
+        val refresh: String
+    )
 }

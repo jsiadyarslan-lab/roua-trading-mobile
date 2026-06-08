@@ -112,6 +112,12 @@ struct Position: Codable, Identifiable, Hashable {
     // ---- Coding Keys (backend → Swift) ----
     // Backend V2 sends "unrealizedPnL" (capital L);
     // our property is "unrealizedPnl" (lowercase l).
+    //
+    // IMPORTANT: Only keys that map to stored properties are listed here.
+    // Extra JSON fields (exchange, source, credentialId, realizedPnl, etc.)
+    // are automatically ignored by the JSON decoder — they do NOT need
+    // CodingKey entries. Adding keys without stored properties breaks the
+    // auto-synthesized encode(to:) method, causing compilation failures.
     enum CodingKeys: String, CodingKey {
         case id
         case symbol
@@ -129,16 +135,6 @@ struct Position: Codable, Identifiable, Hashable {
         case closedAt
         case status
         case type
-        // Extra fields from V2 that we don't use but must accept
-        case exchange
-        case source
-        case exchangeSymbol
-        case credentialId
-        case realizedPnl
-        case highestPrice
-        case lowestPrice
-        case closeReason
-        case version
     }
 
     // ---- Custom Decoder with flexible status ----
@@ -159,15 +155,16 @@ struct Position: Codable, Identifiable, Hashable {
         }
 
         // Numeric fields: accept both Number and String (Prisma Decimal)
-        entryPrice      = try c.decodeFlexibleDouble(forKey: .entryPrice) ?? 0
-        currentPrice    = try c.decodeFlexibleDouble(forKey: .currentPrice)
-        quantity        = try c.decodeFlexibleDouble(forKey: .quantity) ?? 0
-        unrealizedPnl   = try c.decodeFlexibleDouble(forKey: .unrealizedPnl) ?? 0
-        unrealizedPnlPct = try c.decodeFlexibleDouble(forKey: .unrealizedPnlPct)
-        stopLoss        = try c.decodeFlexibleDouble(forKey: .stopLoss)
-        takeProfit      = try c.decodeFlexibleDouble(forKey: .takeProfit)
-        leverage        = try c.decodeFlexibleDouble(forKey: .leverage)
-        margin          = try c.decodeFlexibleDouble(forKey: .margin)
+        // decodeFlexibleDouble is non-throwing (returns Double?) — no 'try' needed
+        entryPrice      = c.decodeFlexibleDouble(forKey: .entryPrice) ?? 0
+        currentPrice    = c.decodeFlexibleDouble(forKey: .currentPrice)
+        quantity        = c.decodeFlexibleDouble(forKey: .quantity) ?? 0
+        unrealizedPnl   = c.decodeFlexibleDouble(forKey: .unrealizedPnl) ?? 0
+        unrealizedPnlPct = c.decodeFlexibleDouble(forKey: .unrealizedPnlPct)
+        stopLoss        = c.decodeFlexibleDouble(forKey: .stopLoss)
+        takeProfit      = c.decodeFlexibleDouble(forKey: .takeProfit)
+        leverage        = c.decodeFlexibleDouble(forKey: .leverage)
+        margin          = c.decodeFlexibleDouble(forKey: .margin)
 
         openedAt        = try c.decodeIfPresent(String.self, forKey: .openedAt) ?? ""
         closedAt        = try c.decodeIfPresent(String.self, forKey: .closedAt)
@@ -222,16 +219,15 @@ struct PositionSummary: Codable {
     //   totalPositions  → positionCount
     //   totalValue      → totalPositionValue
     //   totalUnrealizedPnl → same
-    //   totalRealizedPnl   → not in our model (extra field, OK)
-    //   usedMargin         → not in our model (extra field, OK)
+    //
+    // IMPORTANT: Only keys that map to stored properties are listed here.
+    // Extra JSON fields (totalRealizedPnl, usedMargin) are automatically
+    // ignored by the JSON decoder — no CodingKey entries needed.
     enum CodingKeys: String, CodingKey {
         case totalUnrealizedPnl
         case totalPositionValue = "totalValue"        // V1 uses totalValue
         case positionCount = "totalPositions"          // V1 uses totalPositions
         case positions
-        // Extra fields from V1 that we accept but don't store
-        case totalRealizedPnl
-        case usedMargin
     }
 
     init(from decoder: Decoder) throws {
@@ -314,7 +310,7 @@ struct PortfolioSummary: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        totalBalance        = try c.decode(Double.self, forKey: .totalBalance)
+        totalBalance        = try c.decodeIfPresent(Double.self, forKey: .totalBalance) ?? 0
         dailyPnL            = try c.decodeIfPresent(Double.self, forKey: .dailyPnL) ?? 0
         dailyPnLPercent     = try c.decodeIfPresent(Double.self, forKey: .dailyPnLPercent) ?? 0
         totalExposure       = try c.decodeIfPresent(Double.self, forKey: .totalExposure) ?? 0

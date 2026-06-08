@@ -101,8 +101,8 @@ struct AuthView: View {
             LinearGradient(
                 colors: [
                     Color.rouaBackground,
-                    Color(hex: "0D1220"),
-                    Color(hex: "0A0E17")
+                    Color.rouaBackgroundLight,
+                    Color.rouaBackground
                 ],
                 startPoint: .top,
                 endPoint: .bottom

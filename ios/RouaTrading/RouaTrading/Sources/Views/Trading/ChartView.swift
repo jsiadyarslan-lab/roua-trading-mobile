@@ -5,7 +5,7 @@
 // Renders a candlestick series with volume histogram overlay.
 // Dark theme, crosshair, time/price scales, and live candle updates.
 //
-// Up candle: #00C853 (green)  Down candle: #FF1744 (red)
+// Up candle: #10B981 (green)  Down candle: #EF4444 (red)
 // Volume bars: same colors at reduced opacity.
 //
 // Supports:
@@ -287,12 +287,12 @@ class ChartViewWrapper: UIView {
         // CandlestickSeriesOptions init order: lastValueVisible, title, priceScaleId,
         // visible, priceLineVisible, ..., upColor, downColor, ..., wickUpColor, wickDownColor
         let candleOptions = CandlestickSeriesOptions(
-            upColor: "#00C853",
-            downColor: "#FF1744",
-            borderUpColor: "#00C853",
-            borderDownColor: "#FF1744",
-            wickUpColor: "#00C853",
-            wickDownColor: "#FF1744"
+            upColor: "#10B981",
+            downColor: "#EF4444",
+            borderUpColor: "#10B981",
+            borderDownColor: "#EF4444",
+            wickUpColor: "#10B981",
+            wickDownColor: "#EF4444"
         )
         let candleSeries = chartView.addCandlestickSeries(options: candleOptions)
         self.candlestickSeries = candleSeries
@@ -440,15 +440,15 @@ extension Color {
     func toHex() -> String {
         // Use known colors directly
         if self == .rouaProfit {
-            return "#00C853"
+            return "#10B981"
         } else if self == .rouaLoss {
-            return "#FF1744"
+            return "#EF4444"
         } else if self == .rouaPrimary {
             return "#6C5CE7"
         } else if self == .rouaWarning {
             return "#FFB800"
         } else if self == .rouaNeutral {
-            return "#78909C"
+            return "#8B92A8"
         }
 
         // Fallback: use UIColor description

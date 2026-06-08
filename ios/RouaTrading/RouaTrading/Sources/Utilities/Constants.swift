@@ -295,38 +295,7 @@ enum UIConstants {
 }
 
 // MARK: - Color Constants
-
-/// Named color constants for consistent theming.
-///
-/// These map to the app's Asset Catalog colors when available,
-/// falling back to hex values for programmatic use.
-enum AppColors {
-    // Brand
-    static let primary = Color(hex: "6C5CE7")
-    static let secondary = Color(hex: "A29BFE")
-
-    // Semantic
-    static let success = Color(hex: "00B894")
-    static let warning = Color(hex: "FDCB6E")
-    static let danger = Color(hex: "E17055")
-    static let info = Color(hex: "74B9FF")
-
-    // Long / Short
-    static let long = Color(hex: "00B894")
-    static let short = Color(hex: "E17055")
-
-    // Backgrounds
-    static let backgroundPrimary = Color(hex: "1A1A2E")
-    static let backgroundSecondary = Color(hex: "16213E")
-    static let backgroundTertiary = Color(hex: "0F3460")
-    static let backgroundCard = Color(hex: "1E1E3F")
-
-    // Text
-    static let textPrimary = Color.white
-    static let textSecondary = Color.white.opacity(0.6)
-    static let textTertiary = Color.white.opacity(0.35)
-
-    // Borders
-    static let borderLight = Color.white.opacity(0.1)
-    static let borderMedium = Color.white.opacity(0.2)
-}
+// DEPRECATED: Use RouaColors (RouaColors.swift) instead.
+// All AppColors have been migrated to the unified RouaColors system
+// which is aligned with the web's unified-tokens.ts.
+// AppColors enum removed to prevent duplicate/conflicting color definitions.

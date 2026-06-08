@@ -901,7 +901,7 @@ extension AssetBalance {
         let colors: [Color] = [
             .rouaPrimary, .rouaAccent, .rouaProfit,
             .rouaWarning, .rouaInfo, .rouaSecondary,
-            .rouaLoss, .rouaNeutral, Color(hex: "FF6B6B"),
+            .rouaLoss, .rouaNeutral, .rouaPurple,
         ]
         let hash = asset.hashValue
         let index = abs(hash) % colors.count

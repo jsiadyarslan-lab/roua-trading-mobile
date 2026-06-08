@@ -104,7 +104,7 @@ struct PortfolioView: View {
                 // Only show full-screen loading on first load when ALL data is empty.
                 // Once any data arrives, hide the overlay so the user can see what loaded.
                 if viewModel.isLoading
-                    && viewModel.balances == nil
+                    && viewModel.portfolioSummary == nil
                     && viewModel.credentials.isEmpty
                     && viewModel.agentState == nil {
                     LoadingView(message: "جاري التحميل...")
@@ -200,15 +200,17 @@ extension PortfolioView {
     private var balancesTab: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: RouaSpacing.lg) {
-                if let balances = viewModel.balances {
+                if let summary = viewModel.portfolioSummary {
                     // Total Balance Card
-                    totalBalanceCard(balances)
+                    totalBalanceCard(summary)
 
-                    // Asset Allocation
-                    assetAllocationSection(balances)
+                    // Open Positions (if any)
+                    if !summary.positions.isEmpty {
+                        positionsSection(summary)
+                    }
 
-                    // Assets List
-                    assetsListSection(balances)
+                    // Risk & Metrics
+                    portfolioMetricsSection(summary)
                 } else if viewModel.isLoading {
                     balancesShimmer
                 } else if let error = viewModel.errorMessage {
@@ -232,32 +234,30 @@ extension PortfolioView {
         }
     }
 
-    private func totalBalanceCard(_ balances: Balances) -> some View {
+    private func totalBalanceCard(_ summary: PortfolioSummary) -> some View {
         GlassCard(glow: .rouaPrimary) {
             VStack(alignment: .leading, spacing: RouaSpacing.md) {
                 Text("إجمالي الرصيد")
                     .rouaFont(.subheadline, color: .rouaTextSecondary)
 
-                Text("$\(formatNumber(balances.totalBalance))")
+                Text("$\(formatNumber(summary.totalBalance))")
                     .rouaFont(.largeTitle, color: .rouaTextPrimary)
                     .monospacedDigit()
 
                 HStack(spacing: RouaSpacing.lg) {
                     ChangeBadge(
-                        value: balances.totalPnl,
-                        percentage: balances.totalBalance > 0
-                            ? (balances.totalPnl / balances.totalBalance) * 100
-                            : 0
+                        value: summary.dailyPnL,
+                        percentage: summary.dailyPnLPercent
                     )
 
                     StatMini(
-                        label: "متاح",
-                        value: "$\(formatNumber(balances.availableBalance))"
+                        label: "غير محقق",
+                        value: "$\(formatNumber(summary.unrealizedPnl))"
                     )
 
                     StatMini(
-                        label: "الأصول",
-                        value: "\(balances.activeAssetCount)"
+                        label: "الصفقات",
+                        value: "\(summary.openPositionsCount)"
                     )
                 }
             }
@@ -265,108 +265,69 @@ extension PortfolioView {
         .padding(.horizontal, RouaSpacing.screenPadding)
     }
 
-    private func assetAllocationSection(_ balances: Balances) -> some View {
-        VStack(spacing: RouaSpacing.md) {
-            SectionHeader(title: "توزيع الأصول")
-
-            if balances.assets.filter({ $0.total > 0 }).isEmpty {
-                Text("لا توجد أصول")
-                    .rouaFont(.footnote, color: .rouaTextTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, RouaSpacing.md)
-            } else {
-                // Horizontal colored bars representing allocation
-                let totalUSD = balances.assets.map(\.usdValue).reduce(0, +)
-                let sortedAssets = balances.assets
-                    .filter { $0.usdValue > 0 }
-                    .sorted { $0.usdValue > $1.usdValue }
-
-                VStack(spacing: RouaSpacing.xs) {
-                    // Bar visualization
-                    GeometryReader { geometry in
-                        HStack(spacing: 2) {
-                            ForEach(sortedAssets, id: \.asset) { asset in
-                                let ratio = totalUSD > 0 ? asset.usdValue / totalUSD : 0
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(asset.allocationColor)
-                                    .frame(width: max(2, geometry.size.width * ratio))
-                            }
-                        }
-                    }
-                    .frame(height: 8)
-                    .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius))
-
-                    // Legend
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                    ], spacing: RouaSpacing.xs) {
-                        ForEach(sortedAssets.prefix(9), id: \.asset) { asset in
-                            HStack(spacing: RouaSpacing.xs) {
-                                Circle()
-                                    .fill(asset.allocationColor)
-                                    .frame(width: 8, height: 8)
-                                Text(asset.asset)
-                                    .rouaFont(.micro, color: .rouaTextTertiary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, RouaSpacing.screenPadding)
-            }
-        }
-    }
-
-    private func assetsListSection(_ balances: Balances) -> some View {
+    private func positionsSection(_ summary: PortfolioSummary) -> some View {
         VStack(spacing: RouaSpacing.sm) {
-            SectionHeader(title: "الأصول")
+            SectionHeader(title: "الصفقات المفتوحة")
 
-            ForEach(balances.assets.filter { $0.total > 0 }) { asset in
-                assetRow(asset)
+            ForEach(summary.positions) { position in
+                PositionRow(
+                    symbol: position.symbol,
+                    side: position.isLong ? .long : .short,
+                    quantity: String(format: "%.4f", position.quantity),
+                    entryPrice: String(format: "%.2f", position.entryPrice),
+                    currentPrice: String(format: "%.2f", position.currentPrice ?? position.entryPrice),
+                    pnl: position.unrealizedPnl,
+                    pnlPct: position.unrealizedPnlPct ?? 0
+                )
             }
         }
         .padding(.horizontal, RouaSpacing.screenPadding)
     }
 
-    private func assetRow(_ asset: AssetBalance) -> some View {
-        GlassCard {
-            VStack(spacing: RouaSpacing.sm) {
-                // Header row
-                HStack {
-                    Text(asset.asset)
-                        .rouaFont(.calloutBold, color: .rouaTextPrimary)
+    private func portfolioMetricsSection(_ summary: PortfolioSummary) -> some View {
+        VStack(spacing: RouaSpacing.sm) {
+            SectionHeader(title: "مقاييس المحفظة")
 
-                    if asset.hasPosition {
-                        Badge(text: "مفتوح", variant: .info)
+            GlassCard {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible()),
+                ], spacing: RouaSpacing.lg) {
+                    StatMini(
+                        label: "التعرض الإجمالي",
+                        value: "$\(formatNumber(summary.totalExposure))"
+                    )
+                    StatMini(
+                        label: "الهامش المستخدم",
+                        value: "$\(formatNumber(summary.marginUsed))"
+                    )
+                    if let available = summary.availableBalance {
+                        StatMini(
+                            label: "الرصيد المتاح",
+                            value: "$\(formatNumber(available))"
+                        )
                     }
-
-                    Spacer()
-
-                    if let pnl = asset.pnl, let pct = asset.pnlPct {
-                        ChangeBadge(value: pnl, percentage: pct)
+                    if let totalPnl = summary.totalPnl {
+                        StatMini(
+                            label: "إجمالي الربح/الخسارة",
+                            value: "$\(formatNumber(totalPnl))",
+                            change: totalPnl
+                        )
                     }
-                }
-
-                // Amount details
-                HStack(spacing: RouaSpacing.xl) {
-                    StatMini(label: "متاح", value: formatNumber(asset.free))
-                    StatMini(label: "مستخدم", value: formatNumber(asset.used))
-                    StatMini(label: "الإجمالي", value: formatNumber(asset.total))
-                }
-
-                // USD value
-                HStack {
-                    Text("القيمة بالدولار")
-                        .rouaFont(.caption, color: .rouaTextTertiary)
-                    Spacer()
-                    Text("$\(formatNumber(asset.usdValue))")
-                        .rouaFont(.mono, color: .rouaTextPrimary)
-                        .monospacedDigit()
+                    StatMini(
+                        label: "أقصى تراجع",
+                        value: String(format: "%.1f%%", summary.maxDrawdownPercent)
+                    )
+                    if let marginAvail = summary.marginAvailable {
+                        StatMini(
+                            label: "الهامش المتاح",
+                            value: "$\(formatNumber(marginAvail))"
+                        )
+                    }
                 }
             }
         }
+        .padding(.horizontal, RouaSpacing.screenPadding)
     }
 
     private var balancesShimmer: some View {

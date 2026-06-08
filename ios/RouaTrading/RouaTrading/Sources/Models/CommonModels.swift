@@ -232,6 +232,21 @@ enum CandleInterval: String, Codable, CaseIterable, Identifiable {
         case .oneWeek:    return .oneWeek
         }
     }
+
+    /// Binance REST API interval format.
+    /// Maps our raw values ("1min", "5min", "1day", etc.) to Binance's
+    /// expected format ("1m", "5m", "1d", etc.).
+    var binanceInterval: String {
+        switch self {
+        case .oneMin:     return "1m"
+        case .fiveMin:    return "5m"
+        case .fifteenMin: return "15m"
+        case .oneHour:    return "1h"
+        case .fourHour:   return "4h"
+        case .oneDay:     return "1d"
+        case .oneWeek:    return "1w"
+        }
+    }
 }
 
 // MARK: - Signal Direction (shared by AI & Signal models)

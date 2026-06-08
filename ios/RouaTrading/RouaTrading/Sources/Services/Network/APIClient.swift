@@ -497,12 +497,10 @@ final class APIClient {
             if let value = response.data {
                 return value
             }
-            // success=true but data is null — acceptable for void-like endpoints
-            // Try to see if T can be constructed from an empty dictionary
-            if let emptyData = "{}".data(using: .utf8),
-               let emptyValue = try? JSONDecoder().decode(T.self, from: emptyData) {
-                return emptyValue
-            }
+            // success=true but data is null — this means "no data available".
+            // Do NOT create empty objects from "{}" as that produces misleading
+            // zero-value data (e.g., Balances with $0, RiskReport with low risk).
+            // Instead, fall through to other strategies or throw a decoding error.
         }
 
         // Strategy 2: APIDataEnvelope<T>

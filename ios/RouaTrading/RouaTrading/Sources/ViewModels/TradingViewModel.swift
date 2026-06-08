@@ -3,8 +3,8 @@
 // RouaTrading — Full trading experience ViewModel.
 //
 // Manages chart data, live quotes, positions, trade history, order
-// placement, and position closing. Uses WebSocketManager for real-time
-// price and kline updates.
+// placement, and position closing. Uses BinanceAPIService for market
+// data and WebSocketManager for real-time price and kline updates.
 // ============================================================================
 
 import Foundation
@@ -81,6 +81,7 @@ final class TradingViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let apiClient = APIClient.shared
+    private let binanceAPI = BinanceAPIService.shared
     private let cache = CacheManager.shared
     private let webSocket = WebSocketManager()
     private let logger = AppLogger.trading
@@ -120,15 +121,25 @@ final class TradingViewModel: ObservableObject {
     // MARK: - Chart Data
 
     /// Loads candlestick chart data for the current symbol and timeframe.
+    ///
+    /// Uses BinanceAPIService directly because the backend's `/exchange/history`
+    /// endpoint does not exist in the current deployment.
     func loadChartData() async {
         do {
-            let intervalString = selectedTimeframe.rawValue
+            // Convert symbol format: "BTC/USD" → "BTCUSDT" for Binance
+            let binanceSymbol = currentSymbol
+                .replacingOccurrences(of: "/", with: "")
+                .uppercased()
+            let interval = selectedTimeframe.binanceInterval
+
             let history: [CandleData] = try await cache.valueOrFetch(
-                forKey: CacheKeys.exchangeHistory(symbol: currentSymbol, interval: intervalString),
+                forKey: CacheKeys.exchangeHistory(symbol: currentSymbol, interval: interval),
                 ttl: AppConfig.marketDataCacheTimeout
             ) {
-                try await self.apiClient.request(
-                    .exchangeHistory(symbol: self.currentSymbol, interval: intervalString, limit: 500)
+                try await self.binanceAPI.fetchKlines(
+                    symbol: binanceSymbol,
+                    interval: interval,
+                    limit: 500
                 )
             }
             self.candles = history
@@ -141,13 +152,21 @@ final class TradingViewModel: ObservableObject {
     // MARK: - Quote
 
     /// Loads the latest quote for the current symbol.
+    ///
+    /// Uses BinanceAPIService directly because the backend's `/exchange/quote`
+    /// endpoint does not exist in the current deployment.
     func loadQuote() async {
         do {
+            // Convert symbol format: "BTC/USD" → "BTCUSDT" for Binance
+            let binanceSymbol = currentSymbol
+                .replacingOccurrences(of: "/", with: "")
+                .uppercased()
+
             let quote: Quote = try await cache.valueOrFetch(
                 forKey: CacheKeys.exchangeQuote(symbol: currentSymbol),
                 ttl: AppConfig.marketDataCacheTimeout
             ) {
-                try await self.apiClient.request(.exchangeQuote(symbol: self.currentSymbol))
+                try await self.binanceAPI.fetch24hrTicker(symbol: binanceSymbol)
             }
             self.currentQuote = quote
         } catch {
@@ -322,7 +341,8 @@ final class TradingViewModel: ObservableObject {
         let binanceSymbol = currentSymbol
             .replacingOccurrences(of: "/", with: "")
             .lowercased()  // e.g. "BTC/USD" → "btcusdt"
-        let interval = selectedTimeframe.rawValue
+        // Use Binance interval format for WebSocket subscription
+        let interval = selectedTimeframe.binanceInterval
         webSocket.connect(symbols: [binanceSymbol], intervals: [interval])
     }
 

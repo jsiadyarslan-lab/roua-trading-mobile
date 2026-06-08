@@ -377,6 +377,47 @@ struct PerformanceMetrics: Codable, Hashable {
         case maxDrawdownPercent
     }
 
+    /// Direct memberwise init for programmatic creation (e.g., default fallback).
+    init(
+        totalTrades: Int = 0,
+        winRate: Double = 0,
+        totalPnl: Double = 0,
+        totalPnlPct: Double? = nil,
+        sharpeRatio: Double? = nil,
+        maxDrawdown: Double? = nil,
+        avgWin: Double = 0,
+        avgLoss: Double = 0,
+        profitFactor: Double? = nil,
+        dailyReturn: Double? = nil,
+        winningTrades: Int? = nil,
+        losingTrades: Int? = nil,
+        bestTrade: Double? = nil,
+        worstTrade: Double? = nil,
+        consecutiveWins: Int? = nil,
+        consecutiveLosses: Int? = nil,
+        averageHoldingTime: Double? = nil,
+        period: String? = nil
+    ) {
+        self.totalTrades = totalTrades
+        self.winRate = winRate
+        self.totalPnl = totalPnl
+        self.totalPnlPct = totalPnlPct
+        self.sharpeRatio = sharpeRatio
+        self.maxDrawdown = maxDrawdown
+        self.avgWin = avgWin
+        self.avgLoss = avgLoss
+        self.profitFactor = profitFactor
+        self.dailyReturn = dailyReturn
+        self.winningTrades = winningTrades
+        self.losingTrades = losingTrades
+        self.bestTrade = bestTrade
+        self.worstTrade = worstTrade
+        self.consecutiveWins = consecutiveWins
+        self.consecutiveLosses = consecutiveLosses
+        self.averageHoldingTime = averageHoldingTime
+        self.period = period
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         totalTrades         = try c.decodeIfPresent(Int.self, forKey: .totalTrades) ?? 0

@@ -234,13 +234,29 @@ extension Color {
 // MARK: - ShapeStyle Conformance (for .foregroundStyle(.rouaXxx) syntax)
 
 extension ShapeStyle where Self == Color {
+    // Brand
     static var rouaPrimary: Color { Color.rouaPrimary }
     static var rouaSecondary: Color { Color.rouaSecondary }
+    static var rouaBrand: Color { Color.rouaBrand }
+    static var rouaBrandLight: Color { Color.rouaBrandLight }
+
+    // Accent
     static var rouaAccent: Color { Color.rouaAccent }
     static var rouaAccentPrimary: Color { Color.rouaAccentPrimary }
-    static var rouaBrand: Color { Color.rouaBrand }
+    static var rouaAccentLight: Color { Color.rouaAccentLight }
+    static var rouaAccentDark: Color { Color.rouaAccentDark }
+
+    // Color accents
     static var rouaCyan: Color { Color.rouaCyan }
+    static var rouaBlue: Color { Color.rouaBlue }
     static var rouaGold: Color { Color.rouaGold }
+    static var rouaPurple: Color { Color.rouaPurple }
+    static var rouaYellow: Color { Color.rouaYellow }
+
+    // Status
+    static var rouaSuccess: Color { Color.rouaSuccess }
+    static var rouaSuccessDim: Color { Color.rouaSuccessDim }
+    static var rouaDanger: Color { Color.rouaDanger }
     static var rouaProfit: Color { Color.rouaProfit }
     static var rouaLoss: Color { Color.rouaLoss }
     static var rouaBuy: Color { Color.rouaBuy }
@@ -248,10 +264,24 @@ extension ShapeStyle where Self == Color {
     static var rouaWarning: Color { Color.rouaWarning }
     static var rouaInfo: Color { Color.rouaInfo }
     static var rouaNeutral: Color { Color.rouaNeutral }
+
+    // Text
     static var rouaTextPrimary: Color { Color.rouaTextPrimary }
     static var rouaTextSecondary: Color { Color.rouaTextSecondary }
     static var rouaTextTertiary: Color { Color.rouaTextTertiary }
+    static var rouaTextMuted: Color { Color.rouaTextMuted }
     static var rouaTextDisabled: Color { Color.rouaTextDisabled }
+
+    // Backgrounds & Surfaces
+    static var rouaBackground: Color { Color.rouaBackground }
+    static var rouaBackgroundLight: Color { Color.rouaBackgroundLight }
+    static var rouaBackgroundLighter: Color { Color.rouaBackgroundLighter }
+    static var rouaBackground2: Color { Color.rouaBackground2 }
+    static var rouaSurface: Color { Color.rouaSurface }
+    static var rouaCard: Color { Color.rouaCard }
+    static var rouaCardHover: Color { Color.rouaCardHover }
+    static var rouaSurfaceLight: Color { Color.rouaSurfaceLight }
+    static var rouaCardBorder: Color { Color.rouaCardBorder }
 }
 
 // MARK: - P/L Color Utility (matches web: getPnlColor, isPnlPositive, getPnlSign)

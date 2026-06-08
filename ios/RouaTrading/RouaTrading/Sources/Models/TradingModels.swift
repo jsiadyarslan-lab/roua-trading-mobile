@@ -284,7 +284,7 @@ struct Trade: Codable, Identifiable, Hashable {
 /// Paginated wrapper for closed trades.
 struct TradeHistory: Codable {
     let trades: [Trade]
-    let total: Int
+    let total: Int?
 }
 
 // MARK: - Close Position Request

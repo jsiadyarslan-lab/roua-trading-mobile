@@ -281,6 +281,34 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Guest Sign-In
+
+    /// Creates a guest session for demo/preview access.
+    ///
+    /// The backend `/api/auth/guest` endpoint returns JSON with tokens
+    /// for mobile clients (X-Platform: ios header). After a successful
+    /// guest login, the session is fully functional with auto-created
+    /// paper trading credentials.
+    func guestSignIn() {
+        currentTask?.cancel()
+        currentTask = Task {
+            isLoading = true
+            errorMessage = nil
+
+            do {
+                try await authService.signInAsGuest()
+                isAuthenticated = authService.isAuthenticated
+                currentUser = authService.currentUser
+                logger.info("Guest sign-in successful")
+            } catch {
+                errorMessage = error.localizedDescription
+                logger.error("Guest sign-in failed: \(error.localizedDescription)")
+            }
+
+            isLoading = false
+        }
+    }
+
     // MARK: - Biometric Unlock
 
     /// Attempts to unlock the app using Face ID or Touch ID.

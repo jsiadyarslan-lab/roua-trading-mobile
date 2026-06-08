@@ -475,7 +475,7 @@ final class APIClient {
         }
 
         // Extract new refresh token if provided
-        if let newRefresh = extractRefreshToken(from: httpResponse) {
+        if let newRefresh = extractRefreshToken(from: httpResponse, data: data) {
             keychain.store(key: AppConfig.refreshTokenKey, value: newRefresh)
         }
 
@@ -593,7 +593,19 @@ final class APIClient {
     // MARK: - Token Extraction
 
     private func extractSessionToken(from response: HTTPURLResponse, data: Data) -> String? {
-        // First check Set-Cookie header
+        // First check response body for sessionToken (mobile-optimized endpoints)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let token = json["sessionToken"] as? String ?? json["token"] as? String {
+                return token
+            }
+            // Check nested data object
+            if let dataDict = json["data"] as? [String: Any],
+               let token = dataDict["sessionToken"] as? String ?? dataDict["token"] as? String {
+                return token
+            }
+        }
+
+        // Then check Set-Cookie header
         if let cookies = response.allHeaderFields["Set-Cookie"] as? String {
             if let match = cookies.range(of: "roua_session=([^;]+)", options: .regularExpression) {
                 let cookieValue = String(cookies[match])
@@ -606,17 +618,22 @@ final class APIClient {
             }
         }
 
-        // Fallback: check response body for token field
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let dataDict = json["data"] as? [String: Any],
-           let token = dataDict["sessionToken"] as? String ?? dataDict["token"] as? String {
-            return token
-        }
-
         return nil
     }
 
-    private func extractRefreshToken(from response: HTTPURLResponse) -> String? {
+    private func extractRefreshToken(from response: HTTPURLResponse, data: Data? = nil) -> String? {
+        // First check response body for refreshToken (mobile-optimized endpoints)
+        if let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let token = json["refreshToken"] as? String ?? json["refresh"] as? String {
+                return token
+            }
+            if let dataDict = json["data"] as? [String: Any],
+               let token = dataDict["refreshToken"] as? String ?? dataDict["refresh"] as? String {
+                return token
+            }
+        }
+
+        // Then check Set-Cookie header
         if let cookies = response.allHeaderFields["Set-Cookie"] as? String {
             if let match = cookies.range(of: "roua_refresh=([^;]+)", options: .regularExpression) {
                 let cookieValue = String(cookies[match])

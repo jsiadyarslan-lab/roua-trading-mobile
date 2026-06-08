@@ -242,6 +242,15 @@ struct AuthView: View {
                     }
                 }
             )
+
+            // ── Guest Access — try the app without signing up ──
+            RouaButton(
+                "تجربة التطبيق كزائر",
+                variant: .ghost,
+                size: .medium,
+                icon: "person.crop.circle.badge.questionmark",
+                action: { authViewModel.guestSignIn() }
+            )
         }
         .animation(
             .spring(response: 0.4, dampingFraction: 0.8),

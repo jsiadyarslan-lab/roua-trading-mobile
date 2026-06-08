@@ -435,57 +435,7 @@ final class AuthService: ObservableObject {
         }
     }
 
-    // MARK: - Guest Authentication
 
-    /// Creates a guest session for demo/preview access.
-    ///
-    /// The backend `/api/auth/guest` endpoint now returns JSON with
-    /// `sessionToken`, `refreshToken`, and `user` for mobile clients
-    /// (detected via the `X-Platform: ios` header).
-    ///
-    /// After a successful guest login, the session tokens are stored in
-    /// the Keychain and the user is marked as authenticated.
-    func signInAsGuest() async throws {
-        do {
-            let rawData = try await apiClient.requestRaw(.authGuest)
-
-            if let json = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any] {
-                let isAuthed = json["authenticated"] as? Bool ?? false
-                guard isAuthed else {
-                    let errorMsg = json["error"] as? String ?? "فشل إنشاء جلسة زائر"
-                    throw AuthError.verificationFailed(errorMsg)
-                }
-
-                // Extract session token from response body
-                if let sessionToken = json["sessionToken"] as? String {
-                    keychain.store(key: AppConfig.sessionTokenKey, value: sessionToken)
-                    logger.info("Guest session token stored from response body")
-                }
-                if let refreshToken = json["refreshToken"] as? String {
-                    keychain.store(key: AppConfig.refreshTokenKey, value: refreshToken)
-                    logger.info("Guest refresh token stored from response body")
-                }
-
-                // Extract user data
-                if let userData = json["user"] as? [String: Any] {
-                    let userDataJson = try JSONSerialization.data(withJSONObject: userData)
-                    let user = try JSONDecoder().decode(User.self, from: userDataJson)
-                    self.currentUser = user
-                    self.isAuthenticated = true
-                    keychain.store(key: userKey, value: user)
-                    logger.info("Guest login successful for user: \(user.email)")
-                } else {
-                    throw AuthError.verificationFailed("لم يتم استلام بيانات المستخدم")
-                }
-            } else {
-                throw AuthError.verificationFailed("فشل تحليل الاستجابة")
-            }
-        } catch let error as AuthError {
-            throw error
-        } catch let error as APIError {
-            throw AuthError.verificationFailed(error.localizedDescription)
-        }
-    }
 
     // MARK: - OTP Authentication
 

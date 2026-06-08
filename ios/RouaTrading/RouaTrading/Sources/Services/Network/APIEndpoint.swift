@@ -41,8 +41,6 @@ enum APIEndpoint {
     case authOtpSend
     /// OTP-based authentication: verify the 6-digit code
     case authOtpVerify
-    /// Guest session — creates a temporary demo session
-    case authGuest
     /// Passkey verification — uses /auth/passkey/verify (Next.js proxy)
     case authPasskeyVerify
 
@@ -268,8 +266,7 @@ extension APIEndpoint {
         // OTP-based auth endpoints (Next.js proxy)
         case .authOtpSend:                     return "/auth/otp/send"
         case .authOtpVerify:                   return "/auth/otp/verify"
-        case .authGuest:                       return "/auth/guest"
-        // Passkey verification — Next.js proxy wraps NestJS /auth/verify
+        // Passkey verification
         case .authPasskeyVerify:               return "/auth/passkey/verify"
 
         // Trading V1
@@ -460,10 +457,9 @@ extension APIEndpoint {
         case .authDeleteSessionById:           return .DELETE
         case .authDeleteAllSessions:           return .DELETE
         case .authRecover:                     return .POST
-        // OTP and guest auth
+        // OTP auth
         case .authOtpSend:                     return .POST
         case .authOtpVerify:                   return .POST
-        case .authGuest:                       return .GET
         case .authPasskeyVerify:               return .POST
 
         // Trading V1
@@ -651,7 +647,6 @@ extension APIEndpoint {
              .authRecover,
              .authOtpSend,
              .authOtpVerify,
-             .authGuest,
              .authPasskeyVerify,
              .health,
              .diagnosticModules:

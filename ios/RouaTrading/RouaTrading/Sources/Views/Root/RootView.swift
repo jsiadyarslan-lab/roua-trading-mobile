@@ -52,10 +52,9 @@ struct RootView: View {
         }
         .onAppear {
             // Validate session in the background — don't block the UI.
-            // If no session exists, auto-create a guest session so all API
-            // calls have a valid token (prevents creating a new guest user
-            // on every single API request).
-            authViewModel.validateSessionAndAutoGuest()
+            // Guest sessions are disabled — users must sign in to access
+            // authenticated features. Public data is still available.
+            authViewModel.validateSession()
         }
         .onChange(of: authViewModel.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {

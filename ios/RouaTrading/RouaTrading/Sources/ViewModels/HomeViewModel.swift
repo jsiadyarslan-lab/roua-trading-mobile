@@ -164,6 +164,11 @@ final class HomeViewModel: ObservableObject {
 
     /// Fallback: loads council briefs and maps them to signal-like objects
     /// so the home screen still shows AI activity even when /signals/active fails.
+    ///
+    /// The backend `/strategic-council/briefs/active` returns:
+    /// `{ "success": true, "data": [...] }` — a flat array of Brief objects.
+    /// The smartDecode in APIClient unwraps the envelope, so we decode
+    /// directly as `[Brief]`.
     private func loadCouncilBriefsAsSignals() async {
         do {
             let briefs: [Brief] = try await apiClient.request(.councilActiveBriefs(symbol: nil))

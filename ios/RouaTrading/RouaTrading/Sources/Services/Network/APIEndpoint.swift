@@ -29,6 +29,7 @@ enum APIEndpoint {
     case authRegister
     case authChallenge(email: String)
     case authVerify
+    /// Session check — uses /auth/me (Next.js proxy) instead of /auth/session
     case authSession
     case authDeleteSession
     case authRefresh
@@ -36,6 +37,14 @@ enum APIEndpoint {
     case authDeleteSessionById(id: String)
     case authDeleteAllSessions
     case authRecover(token: String)
+    /// OTP-based authentication: send verification code to email
+    case authOtpSend
+    /// OTP-based authentication: verify the 6-digit code
+    case authOtpVerify
+    /// Guest session — creates a temporary demo session
+    case authGuest
+    /// Passkey verification — uses /auth/passkey/verify (Next.js proxy)
+    case authPasskeyVerify
 
     // ──────────────────────────────────────────────
     // MARK: Trading V1
@@ -247,13 +256,21 @@ extension APIEndpoint {
         case .authRegister:                    return "/auth/register"
         case .authChallenge:                   return "/auth/challenge"
         case .authVerify:                      return "/auth/verify"
-        case .authSession:                     return "/auth/session"
-        case .authDeleteSession:               return "/auth/session"
+        // FIX: Next.js proxy exposes /auth/me (not /auth/session) for session checks
+        // The backend's /auth/session is a NestJS route NOT proxied by Next.js.
+        case .authSession:                     return "/auth/me"
+        case .authDeleteSession:               return "/auth/me"
         case .authRefresh:                     return "/auth/refresh"
         case .authSessions:                    return "/auth/sessions"
         case .authDeleteSessionById(let id):   return "/auth/sessions/\(id)"
         case .authDeleteAllSessions:           return "/auth/sessions"
         case .authRecover(let token):          return "/auth/recover/\(token)"
+        // OTP-based auth endpoints (Next.js proxy)
+        case .authOtpSend:                     return "/auth/otp/send"
+        case .authOtpVerify:                   return "/auth/otp/verify"
+        case .authGuest:                       return "/auth/guest"
+        // Passkey verification — Next.js proxy wraps NestJS /auth/verify
+        case .authPasskeyVerify:               return "/auth/passkey/verify"
 
         // Trading V1
         case .tradingAccount:                  return "/trading/account"
@@ -433,7 +450,8 @@ extension APIEndpoint {
         switch self {
         // Auth
         case .authRegister:                    return .POST
-        case .authChallenge:                   return .POST
+        // FIX: Backend expects GET with ?email= for challenge, not POST
+        case .authChallenge:                   return .GET
         case .authVerify:                      return .POST
         case .authSession:                     return .GET
         case .authDeleteSession:               return .DELETE
@@ -442,6 +460,11 @@ extension APIEndpoint {
         case .authDeleteSessionById:           return .DELETE
         case .authDeleteAllSessions:           return .DELETE
         case .authRecover:                     return .POST
+        // OTP and guest auth
+        case .authOtpSend:                     return .POST
+        case .authOtpVerify:                   return .POST
+        case .authGuest:                       return .GET
+        case .authPasskeyVerify:               return .POST
 
         // Trading V1
         case .tradingAccount:                  return .GET
@@ -626,6 +649,10 @@ extension APIEndpoint {
              .authVerify,
              .authRefresh,
              .authRecover,
+             .authOtpSend,
+             .authOtpVerify,
+             .authGuest,
+             .authPasskeyVerify,
              .health,
              .diagnosticModules:
 
@@ -789,6 +816,11 @@ extension APIEndpoint {
 
         case .signalGenerate(let pair):
             return [URLQueryItem(name: "pair", value: pair)]
+
+        // FIX: authChallenge needs email as query parameter
+        // Backend expects GET /api/auth/challenge?email=...
+        case .authChallenge(let email):
+            return [URLQueryItem(name: "email", value: email)]
 
         default:
             return []

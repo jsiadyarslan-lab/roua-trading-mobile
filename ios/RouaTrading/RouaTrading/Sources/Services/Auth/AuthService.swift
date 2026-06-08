@@ -61,6 +61,30 @@ struct RegistrationRequest: Codable {
     let name: String?
 }
 
+/// OTP send request body.
+struct OtpSendRequest: Codable {
+    let email: String
+}
+
+/// OTP verify request body.
+struct OtpVerifyRequest: Codable {
+    let email: String
+    let otp: String
+}
+
+/// OTP send response.
+struct OtpSendResponse: Codable {
+    let success: Bool
+    let message: String?
+}
+
+/// OTP verify response — backend returns { authenticated, user, isGuest }.
+struct OtpVerifyResponse: Codable {
+    let authenticated: Bool
+    let user: User?
+    let isGuest: Bool?
+}
+
 /// Session info returned by the backend.
 struct SessionInfo: Codable {
     let user: User
@@ -411,6 +435,84 @@ final class AuthService: ObservableObject {
         }
     }
 
+    // MARK: - OTP Authentication
+
+    /// Sends a 6-digit OTP code to the given email address.
+    ///
+    /// The backend `/api/auth/otp/send` endpoint generates and stores an OTP
+    /// that expires after 10 minutes. The code is sent via email in production,
+    /// or logged to the server console in development.
+    ///
+    /// - Parameter email: The user's email address.
+    func sendOtp(email: String) async throws {
+        do {
+            let response: OtpSendResponse = try await apiClient.request(
+                .authOtpSend,
+                body: OtpSendRequest(email: email)
+            )
+            guard response.success else {
+                throw AuthError.verificationFailed(response.message ?? "فشل إرسال رمز التحقق")
+            }
+            logger.info("OTP sent to: \(email)")
+        } catch let error as APIError {
+            throw AuthError.verificationFailed(error.localizedDescription)
+        }
+    }
+
+    /// Verifies the OTP code and authenticates the user.
+    ///
+    /// The backend `/api/auth/otp/verify` endpoint checks the 6-digit code.
+    /// If valid, it creates a new session and returns the user data along
+    /// with `roua_session` and `roua_refresh` cookies.
+    ///
+    /// - Parameters:
+    ///   - email: The user's email address.
+    ///   - otp: The 6-digit verification code.
+    func verifyOtp(email: String, otp: String) async throws {
+        do {
+            let rawData = try await apiClient.requestRaw(
+                .authOtpVerify,
+                body: OtpVerifyRequest(email: email, otp: otp)
+            )
+
+            // Parse the response — backend returns { authenticated, user } or
+            // wraps it in { success: true, data: { authenticated, user } }
+            if let json = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any] {
+                // Try direct format first: { authenticated: true, user: {...} }
+                var isAuthed = json["authenticated"] as? Bool ?? false
+                var userData = json["user"] as? [String: Any]
+
+                // Try wrapped format: { success: true, data: { authenticated: true, user: {...} } }
+                if !isAuthed, let dataDict = json["data"] as? [String: Any] {
+                    isAuthed = dataDict["authenticated"] as? Bool ?? false
+                    userData = dataDict["user"] as? [String: Any]
+                }
+
+                guard isAuthed else {
+                    let errorMsg = json["error"] as? String ?? json["message"] as? String
+                    throw AuthError.verificationFailed(errorMsg ?? "رمز التحقق غير صحيح")
+                }
+
+                if let userData {
+                    let userDataJson = try JSONSerialization.data(withJSONObject: userData)
+                    let user = try JSONDecoder().decode(User.self, from: userDataJson)
+                    self.currentUser = user
+                    self.isAuthenticated = true
+                    keychain.store(key: userKey, value: user)
+                    logger.info("OTP login successful for user: \(user.email)")
+                } else {
+                    throw AuthError.verificationFailed("لم يتم استلام بيانات المستخدم")
+                }
+            } else {
+                throw AuthError.verificationFailed("فشل تحليل الاستجابة")
+            }
+        } catch let error as AuthError {
+            throw error
+        } catch let error as APIError {
+            throw AuthError.verificationFailed(error.localizedDescription)
+        }
+    }
+
     // MARK: - Google OAuth
 
     /// Initiates Google OAuth sign-in via `ASWebAuthenticationSession`.
@@ -515,10 +617,23 @@ final class AuthService: ObservableObject {
     }
 
     /// After a successful OAuth callback, validate the session to get user info.
+    /// Uses /api/auth/me (Next.js proxy) instead of /api/auth/session.
     private func validateAfterOAuth() async throws {
         do {
-            let sessionInfo: SessionInfo = try await apiClient.request(.authSession)
-            handleSuccessfulAuth(sessionInfo: sessionInfo)
+            // The /auth/me endpoint returns { authenticated: true, user: {...} }
+            let rawData = try await apiClient.requestRaw(.authSession)
+
+            if let json = try? JSONSerialization.jsonObject(with: rawData) as? [String: Any],
+               let isAuthed = json["authenticated"] as? Bool, isAuthed,
+               let userData = json["user"] as? [String: Any] {
+                let userDataJson = try JSONSerialization.data(withJSONObject: userData)
+                let user = try JSONDecoder().decode(User.self, from: userDataJson)
+                self.currentUser = user
+                self.isAuthenticated = true
+                keychain.store(key: userKey, value: user)
+            } else {
+                throw AuthError.sessionValidationFailed
+            }
         } catch {
             throw AuthError.sessionValidationFailed
         }

@@ -238,6 +238,17 @@ struct ModelAnalysis: Codable, Identifiable, Hashable {
 /// { "success": true, "data": { "active": [...] } }
 /// ```
 /// The `count` field may not be present, so it is optional.
+///
+/// Backend `/strategic-council/briefs/active` returns:
+/// ```json
+/// { "success": true, "data": [...] }
+/// ```
+/// In this case the data is a flat array of Brief objects.
+///
+/// The `smartDecode` in APIClient handles unwrapping the `success`/`data` envelope,
+/// so when we request `BriefsResponse` from `/strategic-council/briefs`, we get
+/// the inner `{ "active": [...] }` object. When we request `[Brief]` from
+/// `/strategic-council/briefs/active`, the array is decoded directly.
 struct BriefsResponse: Codable {
     let active: [Brief]
     let count: Int?

@@ -52,6 +52,15 @@ final class AuthViewModel: ObservableObject {
     /// The most recent error message, if any. Reset at the start of each operation.
     @Published var errorMessage: String?
 
+    /// The email address used for OTP authentication.
+    @Published var otpEmail: String = ""
+
+    /// The 6-digit OTP code entered by the user.
+    @Published var otpCode: String = ""
+
+    /// Whether the OTP has been sent and we're waiting for verification.
+    @Published var isOtpSent: Bool = false
+
     // MARK: - Dependencies
 
     private let authService = AuthService.shared
@@ -193,6 +202,59 @@ final class AuthViewModel: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
                 logger.error("Passkey login failed: \(error.localizedDescription)")
+            }
+
+            isLoading = false
+        }
+    }
+
+    // MARK: - OTP Authentication
+
+    /// Sends a verification code (OTP) to the user's email.
+    ///
+    /// This is the primary authentication method for the mobile app since
+    /// WebAuthn endpoints are not exposed through the Next.js proxy.
+    ///
+    /// - Parameter email: The user's email address.
+    func sendOtp(email: String) {
+        currentTask?.cancel()
+        currentTask = Task {
+            isLoading = true
+            errorMessage = nil
+
+            do {
+                try await authService.sendOtp(email: email)
+                otpEmail = email
+                isOtpSent = true
+                logger.info("OTP sent to \(email)")
+            } catch {
+                errorMessage = error.localizedDescription
+                logger.error("OTP send failed: \(error.localizedDescription)")
+            }
+
+            isLoading = false
+        }
+    }
+
+    /// Verifies the OTP code and completes authentication.
+    ///
+    /// - Parameter otp: The 6-digit verification code.
+    func verifyOtp(otp: String) {
+        currentTask?.cancel()
+        currentTask = Task {
+            isLoading = true
+            errorMessage = nil
+
+            do {
+                try await authService.verifyOtp(email: otpEmail, otp: otp)
+                isAuthenticated = authService.isAuthenticated
+                currentUser = authService.currentUser
+                isOtpSent = false
+                otpCode = ""
+                logger.info("OTP login successful")
+            } catch {
+                errorMessage = error.localizedDescription
+                logger.error("OTP verify failed: \(error.localizedDescription)")
             }
 
             isLoading = false

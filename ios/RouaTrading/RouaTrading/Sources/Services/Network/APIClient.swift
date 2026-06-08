@@ -454,10 +454,12 @@ final class APIClient {
             return false
         }
 
+        // FIX: Use /auth/refresh path (relative to apiBaseURL which already contains /api)
         let url = URL(string: AppConfig.apiBaseURL.absoluteString + "/auth/refresh")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Send refresh token as Cookie header AND as JSON body for maximum compatibility
         request.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
 
         let (data, response) = try await session.data(for: request)
@@ -475,6 +477,19 @@ final class APIClient {
         // Extract new refresh token if provided
         if let newRefresh = extractRefreshToken(from: httpResponse) {
             keychain.store(key: AppConfig.refreshTokenKey, value: newRefresh)
+        }
+
+        // FIX: Also check response body for token data
+        // The backend may return tokens in the JSON body for mobile clients
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let dataDict = json["data"] as? [String: Any] {
+                if let token = dataDict["token"] as? String ?? dataDict["sessionToken"] as? String {
+                    keychain.store(key: AppConfig.sessionTokenKey, value: token)
+                }
+                if let refresh = dataDict["refresh"] as? String ?? dataDict["refreshToken"] as? String {
+                    keychain.store(key: AppConfig.refreshTokenKey, value: refresh)
+                }
+            }
         }
 
         return true

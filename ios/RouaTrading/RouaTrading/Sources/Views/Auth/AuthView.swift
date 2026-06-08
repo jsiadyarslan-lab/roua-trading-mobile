@@ -24,6 +24,7 @@ struct AuthView: View {
     @State private var showContent = false
     @State private var showEmailField = false
     @State private var email = ""
+    @State private var otpCode = ""
     @State private var brandingOffset: CGFloat = 30
 
     @FocusState private var isEmailFocused: Bool
@@ -203,37 +204,41 @@ struct AuthView: View {
                 action: { authViewModel.googleSignIn() }
             )
 
-            // ── Passkey Sign-In (Secondary) ──
+            // ── Email + OTP Sign-In (Secondary) ──
             RouaButton(
-                "تسجيل الدخول بالمفتاح الرقمي",
+                "تسجيل الدخول بالبريد الإلكتروني",
                 variant: .secondary,
                 size: .large,
-                icon: "key.icon",
+                icon: "envelope.fill",
                 action: { toggleEmailField() }
             )
 
-            // ── Email Field (expands when passkey is selected) ──
+            // ── Email Field (expands when email login is selected) ──
             if showEmailField {
                 emailFieldSection
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // ── Create Account (Ghost) ──
+            // ── OTP Field (appears after OTP is sent) ──
+            if authViewModel.isOtpSent {
+                otpFieldSection
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // ── Create Account (Ghost) — also uses OTP flow ──
             RouaButton(
                 "إنشاء حساب جديد",
                 variant: .ghost,
                 size: .medium,
                 icon: "person.badge.plus",
                 action: {
-                    if email.isValidEmail {
-                        authViewModel.registerWithPasskey(email: email)
+                    if !showEmailField {
+                        toggleEmailField()
+                    } else if email.isValidEmail {
+                        // Reuse OTP flow for registration (backend creates user if not exists)
+                        authViewModel.sendOtp(email: email)
                     } else {
-                        // Show email field first
-                        if !showEmailField {
-                            toggleEmailField()
-                        } else {
-                            authViewModel.errorMessage = "يرجى إدخال بريد إلكتروني صحيح"
-                        }
+                        authViewModel.errorMessage = "يرجى إدخال بريد إلكتروني صحيح"
                     }
                 }
             )
@@ -241,6 +246,10 @@ struct AuthView: View {
         .animation(
             .spring(response: 0.4, dampingFraction: 0.8),
             value: showEmailField
+        )
+        .animation(
+            .spring(response: 0.4, dampingFraction: 0.8),
+            value: authViewModel.isOtpSent
         )
     }
 
@@ -261,10 +270,12 @@ struct AuthView: View {
                     .focused($isEmailFocused)
                     .submitLabel(.go)
                     .onSubmit {
-                        authViewModel.loginWithPasskey(email: email)
+                        if email.isValidEmail && !authViewModel.isOtpSent {
+                            authViewModel.sendOtp(email: email)
+                        }
                     }
                     .accessibilityLabel("البريد الإلكتروني")
-                    .accessibilityHint("أدخل بريدك الإلكتروني لتسجيل الدخول بالمفتاح الرقمي")
+                    .accessibilityHint("أدخل بريدك الإلكتروني لإرسال رمز التحقق")
             }
             .padding(.horizontal, RouaSpacing.lg)
             .padding(.vertical, RouaSpacing.md)
@@ -281,20 +292,70 @@ struct AuthView: View {
             )
             .animation(.easeOut(duration: RouaSpacing.animationFast), value: isEmailFocused)
 
-            // Passkey submit button
-            if email.isNotEmpty {
+            // Send OTP button
+            if email.isNotEmpty && !authViewModel.isOtpSent {
                 RouaButton(
-                    "متابعة بالمفتاح الرقمي",
+                    "إرسال رمز التحقق",
                     variant: .primary,
                     size: .medium,
-                    icon: "key.fill",
+                    icon: "paperplane.fill",
                     iconPosition: .trailing,
                     isLoading: authViewModel.isLoading,
                     isDisabled: !email.isValidEmail,
-                    action: { authViewModel.loginWithPasskey(email: email) }
+                    action: { authViewModel.sendOtp(email: email) }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
+    }
+
+    // MARK: - OTP Field
+
+    private var otpFieldSection: some View {
+        VStack(spacing: RouaSpacing.md) {
+            Text("تم إرسال رمز التحقق إلى \(email)")
+                .rouaFont(.caption, color: .rouaTextSecondary)
+
+            HStack(spacing: RouaSpacing.sm) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: RouaSpacing.iconMedium))
+                    .foregroundStyle(.rouaTextTertiary)
+
+                TextField("رمز التحقق", text: $otpCode)
+                    .rouaFont(.callout, color: .rouaTextPrimary)
+                    .keyboardType(.numberPad)
+                    .autocorrectionDisabled()
+                    .submitLabel(.go)
+                    .onSubmit {
+                        if otpCode.count == 6 {
+                            authViewModel.verifyOtp(otp: otpCode)
+                        }
+                    }
+                    .accessibilityLabel("رمز التحقق")
+                    .accessibilityHint("أدخل رمز التحقق المكوّن من 6 أرقام")
+            }
+            .padding(.horizontal, RouaSpacing.lg)
+            .padding(.vertical, RouaSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                    .fill(Color.rouaGlassStrong)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                    .stroke(Color.rouaPrimary.opacity(0.3), lineWidth: 1)
+            )
+
+            // Verify OTP button
+            RouaButton(
+                "تسجيل الدخول",
+                variant: .primary,
+                size: .medium,
+                icon: "checkmark.shield.fill",
+                iconPosition: .trailing,
+                isLoading: authViewModel.isLoading,
+                isDisabled: otpCode.count != 6,
+                action: { authViewModel.verifyOtp(otp: otpCode) }
+            )
         }
     }
 

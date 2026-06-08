@@ -36,10 +36,12 @@ final class TradingViewModel: ObservableObject {
 
     // MARK: - Published State
 
-    /// The currently selected trading symbol (e.g., "BTC/USD").
-    /// NOTE: The backend uses the "BTC/USD" format (with slash), not "BTCUSDT".
-    /// Using the wrong format causes 503 errors from the exchange endpoints.
-    @Published var currentSymbol: String = "BTC/USD"
+    /// The currently selected trading symbol (e.g., "BTC/USDT").
+    /// NOTE: The backend uses the "BTC/USD" format (with slash), but Binance
+    /// requires "BTCUSDT" (no slash, uppercase). We use "BTC/USDT" so that
+    /// removing the slash gives "BTCUSDT" which is valid on Binance.
+    /// "BTC/USD" would produce "BTCUSD" which doesn't exist on Binance Spot.
+    @Published var currentSymbol: String = "BTC/USDT"
 
     /// Candlestick data for the chart.
     @Published var candles: [CandleData] = []
@@ -336,11 +338,11 @@ final class TradingViewModel: ObservableObject {
     /// Connects the WebSocket for live price and kline updates.
     ///
     /// Binance WebSocket expects symbols in format "btcusdt" (lowercase, no slash).
-    /// Our backend uses "BTC/USD" format, so we convert: "BTC/USD" → "btcusdt".
+    /// We convert: "BTC/USDT" → "btcusdt".
     private func connectWebSocket() {
         let binanceSymbol = currentSymbol
             .replacingOccurrences(of: "/", with: "")
-            .lowercased()  // e.g. "BTC/USD" → "btcusdt"
+            .lowercased()  // e.g. "BTC/USDT" → "btcusdt"
         // Use Binance interval format for WebSocket subscription
         let interval = selectedTimeframe.binanceInterval
         webSocket.connect(symbols: [binanceSymbol], intervals: [interval])

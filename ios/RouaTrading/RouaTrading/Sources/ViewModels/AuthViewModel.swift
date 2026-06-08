@@ -119,6 +119,46 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// Validates the session and, if no session exists, automatically creates
+    /// a guest session. This ensures all API calls have a valid session token,
+    /// preventing the Next.js proxy from creating a new guest user on every
+    /// single API request (which causes DB bloat and inconsistent sessions).
+    ///
+    /// This is the preferred method to call on app launch.
+    func validateSessionAndAutoGuest() {
+        currentTask?.cancel()
+        currentTask = Task {
+            isLoading = true
+            errorMessage = nil
+
+            await authService.validateSession()
+
+            // Sync state after validation
+            isAuthenticated = authService.isAuthenticated
+            if authService.isAuthenticated {
+                currentUser = authService.currentUser
+            }
+
+            // If still not authenticated after validation (no session token,
+            // refresh failed, etc.), auto-create a guest session so that
+            // subsequent API calls have a valid token.
+            if !authService.isAuthenticated {
+                logger.info("No session found — auto-creating guest session")
+                do {
+                    try await authService.signInAsGuest()
+                    isAuthenticated = authService.isAuthenticated
+                    currentUser = authService.currentUser
+                    logger.info("Auto guest sign-in successful")
+                } catch {
+                    logger.error("Auto guest sign-in failed: \(error.localizedDescription)")
+                    // Don't set errorMessage — the app still works for public data
+                }
+            }
+
+            isLoading = false
+        }
+    }
+
     // MARK: - Google Sign-In
 
     /// Opens a browser-based Google OAuth flow via `ASWebAuthenticationSession`.

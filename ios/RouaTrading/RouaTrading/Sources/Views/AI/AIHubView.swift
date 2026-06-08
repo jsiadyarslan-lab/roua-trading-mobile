@@ -457,7 +457,7 @@ struct AIHubView: View {
                 LazyVStack(spacing: RouaSpacing.md) {
                     ForEach(chatMessages) { message in
                         chatBubble(message: message)
-                            .id(message.id)
+                            .id(message.id.uuidString)
                     }
 
                     // Typing indicator
@@ -475,7 +475,7 @@ struct AIHubView: View {
             .onChange(of: chatMessages.count) { _, _ in
                 withAnimation {
                     proxy.scrollTo(
-                        isAITyping ? "aiTyping" : chatMessages.last?.id,
+                        isAITyping ? "aiTyping" : chatMessages.last?.id.uuidString,
                         anchor: .bottom
                     )
                 }

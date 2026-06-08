@@ -1,16 +1,19 @@
 // =============================================================================
-// TabBarView.swift — Roua Trading · Custom Tab Bar
+// TabBarView.swift — Roua Trading · Custom Tab Bar (m2-shell)
 // =============================================================================
-// Five-tab custom tab bar with glassmorphism design, glow effects on the
-// selected tab, badge indicators, and smooth tab-switching animations.
-// Each tab wraps its content in its own NavigationStack.
+// Five-tab custom tab bar matching web's m2-shell bottom navigation:
+//   - Gradient active indicator line (cyan → green) ABOVE the active tab
+//   - Glassmorphism background with blur
+//   - Center tab (Scanner) elevated as a FAB
+//   - Badge indicators for real-time counts
+//   - Smooth tab-switching animations with haptic feedback
 //
-// Tabs:
-//   0 — الرئيسية    (Home)      · house.fill
-//   1 — الأسواق     (Markets)   · chart.line.uptrend.xyaxis
-//   2 — الذكاء      (AI Hub)    · brain.head.profile.fill
-//   3 — المحفظة     (Portfolio) · wallet.pass.fill
-//   4 — الإعدادات   (Settings)  · gearshape.fill
+// Tabs (matching web m2-shell):
+//   0 — الشارت     (Chart)     · chart.xyaxis.line       → HomeView
+//   1 — الصفاقات   (Positions) · arrow.left.arrow.right   → TradingView
+//   2 — السكانر    (Scanner)   · magnifyingglass          → MarketsView (center FAB)
+//   3 — AI          (AI)        · brain.head.profile       → AIHubView
+//   4 — المزيد     (More)      · ellipsis                 → SettingsView
 // =============================================================================
 
 import SwiftUI
@@ -18,34 +21,39 @@ import SwiftUI
 // MARK: - Tab Definition
 
 enum RouaTab: Int, CaseIterable, Identifiable {
-    case home = 0
-    case markets = 1
-    case trading = 2
-    case portfolio = 3
-    case settings = 4
+    case chart = 0
+    case positions = 1
+    case scanner = 2
+    case ai = 3
+    case more = 4
 
     var id: Int { rawValue }
 
-    /// Arabic label displayed under the icon.
+    /// Arabic label displayed under the icon (matches web m2-shell).
     var label: String {
         switch self {
-        case .home:      return "الرئيسية"
-        case .markets:   return "الأسواق"
-        case .trading:   return "التداول"
-        case .portfolio: return "المحفظة"
-        case .settings:  return "الإعدادات"
+        case .chart:    return "الشارت"
+        case .positions: return "الصفقات"
+        case .scanner:  return "السكانر"
+        case .ai:       return "AI"
+        case .more:     return "المزيد"
         }
     }
 
     /// SF Symbol name for the icon.
     var iconName: String {
         switch self {
-        case .home:      return "house.fill"
-        case .markets:   return "chart.line.uptrend.xyaxis"
-        case .trading:   return "chart.bar.fill"
-        case .portfolio: return "wallet.pass.fill"
-        case .settings:  return "gearshape.fill"
+        case .chart:    return "chart.xyaxis.line"
+        case .positions: return "arrow.left.arrow.right"
+        case .scanner:  return "magnifyingglass"
+        case .ai:       return "brain.head.profile"
+        case .more:     return "ellipsis"
         }
+    }
+
+    /// Whether this tab is the center FAB-style tab.
+    var isCenter: Bool {
+        self == .scanner
     }
 }
 
@@ -53,7 +61,7 @@ enum RouaTab: Int, CaseIterable, Identifiable {
 
 struct TabBarView: View {
 
-    @State private var selectedTab: RouaTab = .home
+    @State private var selectedTab: RouaTab = .chart
 
     // Real-time data from SocketManager
     @ObservedObject var socketManager: SocketManager
@@ -67,19 +75,19 @@ struct TabBarView: View {
             // ── Tab Content ──
             Group {
                 switch selectedTab {
-                case .home:
+                case .chart:
                     HomeView()
 
-                case .markets:
-                    MarketsView()
-
-                case .trading:
+                case .positions:
                     TradingView()
 
-                case .portfolio:
-                    PortfolioView()
+                case .scanner:
+                    MarketsView()
 
-                case .settings:
+                case .ai:
+                    AIHubView()
+
+                case .more:
                     SettingsView()
                 }
             }
@@ -159,11 +167,11 @@ struct TabBarView: View {
             Rectangle()
                 .fill(Color.rouaGlass)
 
-            // Subtle top-edge gradient
+            // Subtle top-edge gradient (cyan tint matching indicator)
             VStack {
                 LinearGradient(
                     colors: [
-                        Color.rouaPrimary.opacity(0.08),
+                        Color.rouaAccent.opacity(0.06),
                         Color.clear
                     ],
                     startPoint: .top,
@@ -189,35 +197,91 @@ struct TabBarView: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } label: {
             VStack(spacing: RouaSpacing.xs) {
-                ZStack(alignment: .topTrailing) {
-                    // Icon
-                    Image(systemName: tab.iconName)
-                        .font(.system(size: RouaSpacing.iconLarge, weight: isSelected ? .semibold : .regular))
-                        .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(isSelected ? .rouaPrimary : .rouaTextTertiary)
-                        .scaleEffect(isSelected ? 1.1 : 1.0)
-                        .animation(
-                            .spring(response: 0.3, dampingFraction: 0.6),
-                            value: isSelected
-                        )
-
-                    // Glow effect behind icon when selected
+                // ── Gradient indicator line above active tab ──
+                Group {
                     if isSelected {
-                        Circle()
-                            .fill(Color.rouaPrimary.opacity(0.25))
-                            .frame(width: 36, height: 36)
-                            .blur(radius: 12)
-                            .offset(y: -2)
+                        LinearGradient(
+                            colors: [Color.rouaAccent, Color.rouaSuccess],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(height: 2.5)
+                        .clipShape(Capsule())
+                    } else {
+                        Color.clear
+                            .frame(height: 2.5)
+                    }
+                }
+                .animation(
+                    .spring(response: 0.3, dampingFraction: 0.6),
+                    value: isSelected
+                )
+
+                // ── Icon + Badge ──
+                ZStack(alignment: .topTrailing) {
+                    if tab.isCenter {
+                        // ── Center FAB-style tab ──
+                        ZStack {
+                            // Glow behind FAB
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.rouaAccent.opacity(0.3), Color.rouaSuccess.opacity(0.3)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 52, height: 52)
+                                .blur(radius: 14)
+                                .offset(y: 2)
+
+                            // FAB circle background
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.rouaAccent, Color.rouaSuccess],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 46, height: 46)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.rouaGlassBorder, lineWidth: 0.5)
+                                )
+                                .shadow(color: Color.rouaAccent.opacity(0.35), radius: 10, y: 4)
+
+                            // Icon inside FAB
+                            Image(systemName: tab.iconName)
+                                .font(.system(size: RouaSpacing.iconLarge, weight: .semibold))
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundStyle(Color.rouaBackground)
+                        }
+                        .offset(y: -12)
+                    } else {
+                        // ── Regular tab icon ──
+                        Image(systemName: tab.iconName)
+                            .font(.system(size: RouaSpacing.iconLarge, weight: isSelected ? .semibold : .regular))
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(isSelected ? .rouaTextPrimary : .rouaTextTertiary)
+                            .scaleEffect(isSelected ? 1.1 : 1.0)
+                            .animation(
+                                .spring(response: 0.3, dampingFraction: 0.6),
+                                value: isSelected
+                            )
                     }
 
                     // Badge
                     badge(for: tab)
                 }
-                .frame(height: RouaSpacing.iconLarge + 4)
+                .frame(height: tab.isCenter ? 52 : RouaSpacing.iconLarge + 4)
 
                 // Label
                 Text(tab.label)
-                    .rouaFont(isSelected ? .captionBold : .caption, color: isSelected ? .rouaPrimary : .rouaTextTertiary)
+                    .rouaFont(
+                        isSelected ? .captionBold : .caption,
+                        color: isSelected ? .rouaTextPrimary : .rouaTextTertiary
+                    )
                     .lineLimit(1)
             }
         }
@@ -232,9 +296,9 @@ struct TabBarView: View {
     private func badge(for tab: RouaTab) -> some View {
         let count: Int = {
             switch tab {
-            case .trading:  return activeSignalCount
-            case .settings: return unreadNotificationCount
-            default:        return 0
+            case .positions: return activeSignalCount
+            case .more:      return unreadNotificationCount
+            default:         return 0
             }
         }()
 

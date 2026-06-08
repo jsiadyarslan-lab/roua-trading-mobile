@@ -1,9 +1,12 @@
 // =============================================================================
 // HomeView.swift — Roua Trading · Home Dashboard
 // =============================================================================
-// Information-dense but clean home dashboard with:
-//   • Nav bar with title + notification bell
-//   • Portfolio Summary Card
+// Information-dense home dashboard matching the web (m2-shell) design:
+//   • Header: 🌙 Logo + "رؤى" / "ROUA TRADING" + Account balance/P&L
+//   • Live ticker strip: Horizontal scroll of symbols with price & % change
+//   • Scrolling news ticker bar
+//   • Mode selector: Trader / Investor / AI (pill-style)
+//   • Portfolio Summary Card (gradient glow)
 //   • Market Movers (horizontal scroll)
 //   • AI Signals (active)
 //   • Smart Executor Status
@@ -15,11 +18,50 @@
 
 import SwiftUI
 
+// MARK: - Trading Mode Enum
+
+/// Dashboard mode selector matching web's Trader / Investor / AI switcher.
+enum TradingMode: String, CaseIterable {
+    case trader
+    case investor
+    case ai
+
+    var displayName: String {
+        switch self {
+        case .trader:   return "المتداول"
+        case .investor: return "المستثمر"
+        case .ai:       return "الذكاء"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .trader:   return "chart.line.uptrend.xyaxis"
+        case .investor: return "building.columns.fill"
+        case .ai:       return "brain.head.profile.fill"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .trader:   return .rouaAccent       // cyan
+        case .investor: return .rouaProfit        // green
+        case .ai:       return .rouaPrimary       // purple
+        }
+    }
+}
+
 struct HomeView: View {
 
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
     @EnvironmentObject private var languageManager: LanguageManager
+
+    // MARK: - Local State
+
+    @State private var selectedMode: TradingMode = .trader
+    @State private var newsTickerOffset: CGFloat = 0
+    @State private var tickerScrollProxy: ScrollViewProxy?
 
     // MARK: - Body
 
@@ -70,17 +112,18 @@ struct HomeView: View {
 
     private var navBarTitle: some View {
         HStack(spacing: RouaSpacing.sm) {
-            Circle()
-                .fill(Color.rouaGradientPrimary)
-                .frame(width: 28, height: 28)
-                .overlay(
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                )
+            // 🌙 Moon logo — matching web
+            Text("🌙")
+                .font(.system(size: 22))
 
-            Text("روا")
-                .rouaFont(.title3, color: .rouaTextPrimary)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("رؤى")
+                    .rouaFont(.title3, color: .rouaTextPrimary)
+
+                Text("ROUA TRADING")
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .tracking(1.5)
+            }
         }
     }
 
@@ -128,95 +171,309 @@ struct HomeView: View {
 
     private var scrollableContent: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: RouaSpacing.xl) {
-                // Section 1: Portfolio Summary
-                portfolioSummarySection
+            LazyVStack(spacing: 0) {
+                // Header: Account balance & P/L display
+                headerBalanceSection
 
-                // Section 2: Market Movers — always show section header, show placeholder when empty
-                marketMoversSection
+                // Live ticker strip
+                tickerStripSection
 
-                // Section 3: AI Signals — always show section header, show placeholder when empty
-                aiSignalsSection
+                // News ticker bar
+                newsTickerBar
 
-                // Section 4: Smart Executor Status
-                executorStatusSection
+                // Mode selector (pill-style)
+                modeSelectorSection
 
-                // Section 5: Recent News — always show section header, show placeholder when empty
-                recentNewsSection
+                // Sections with standard spacing
+                VStack(spacing: RouaSpacing.xl) {
+                    // Section 1: Portfolio Summary
+                    portfolioSummarySection
 
-                // Section 6: Quick Actions
-                quickActionsSection
+                    // Section 2: Market Movers
+                    marketMoversSection
 
-                // Bottom spacing for tab bar
-                Color.clear.frame(height: RouaSpacing.md)
+                    // Section 3: AI Signals
+                    aiSignalsSection
+
+                    // Section 4: Smart Executor Status
+                    executorStatusSection
+
+                    // Section 5: Recent News
+                    recentNewsSection
+
+                    // Section 6: Quick Actions
+                    quickActionsSection
+
+                    // Bottom spacing for tab bar
+                    Color.clear.frame(height: RouaSpacing.md)
+                }
             }
-            .padding(.top, RouaSpacing.md)
         }
         .refreshable {
             viewModel.refresh()
         }
     }
 
+    // MARK: - Header: Account Balance & P/L
+
+    private var headerBalanceSection: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                Text("رصيد الحساب")
+                    .rouaFont(.caption, color: .rouaTextTertiary)
+                    .accessibilityLabel("رصيد الحساب")
+
+                Text(portfolioBalance)
+                    .rouaFont(.title2, color: .rouaTextPrimary)
+                    .monospacedDigit()
+                    .accessibilityLabel("الرصيد: \(portfolioBalance)")
+            }
+
+            Spacer()
+
+            if let portfolio = viewModel.portfolioSummary, let pnl = portfolio.totalPnl, pnl != 0 {
+                VStack(alignment: .trailing, spacing: RouaSpacing.xs) {
+                    Text("الأرباح والخسائر")
+                        .rouaFont(.caption, color: .rouaTextTertiary)
+
+                    ChangeBadge(
+                        value: pnl,
+                        percentage: portfolio.totalPnlPct ?? 0
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, RouaSpacing.screenPadding)
+        .padding(.top, RouaSpacing.md)
+        .padding(.bottom, RouaSpacing.sm)
+    }
+
+    // MARK: - Live Ticker Strip
+
+    private var tickerStripSection: some View {
+        VStack(spacing: 0) {
+            if !combinedTickerItems.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: RouaSpacing.lg) {
+                        ForEach(combinedTickerItems, id: \.symbol) { item in
+                            tickerStripItem(item: item)
+                        }
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                }
+                .frame(height: 36)
+            } else {
+                // Shimmer placeholder
+                HStack(spacing: RouaSpacing.lg) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        ShimmerView(width: 100, height: 20, cornerRadius: RouaSpacing.smallCornerRadius)
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                }
+                .frame(height: 36)
+            }
+
+            // Separator
+            Rectangle()
+                .fill(Color.rouaGlassBorder.opacity(0.5))
+                .frame(height: 0.5)
+        }
+        .padding(.vertical, RouaSpacing.xs)
+    }
+
+    @ViewBuilder
+    private func tickerStripItem(item: TickerStripItem) -> some View {
+        HStack(spacing: RouaSpacing.xs) {
+            // Symbol
+            Text(item.symbol.replacingOccurrences(of: "/USDT", with: ""))
+                .rouaFont(.captionBold, color: .rouaTextSecondary)
+                .lineLimit(1)
+
+            // Price
+            Text(item.price)
+                .rouaFont(.monoSmall, color: .rouaTextPrimary)
+                .monospacedDigit()
+                .lineLimit(1)
+
+            // % change badge
+            Text(item.changePct)
+                .rouaFont(.caption, color: .rouaPnLColor(value: item.change))
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(item.symbol), \(item.price), \(item.changePct)")
+    }
+
+    // MARK: - News Ticker Bar
+
+    private var newsTickerBar: some View {
+        Group {
+            if !viewModel.recentNews.isEmpty {
+                VStack(spacing: 0) {
+                    HStack(spacing: RouaSpacing.sm) {
+                        // Breaking news icon
+                        Image(systemName: "newspaper.fill")
+                            .font(.system(size: RouaSpacing.iconSmall))
+                            .foregroundStyle(.rouaAccent)
+
+                        // Scrolling headline
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: RouaSpacing.xxxl) {
+                                ForEach(viewModel.recentNews.prefix(10)) { news in
+                                    Text(news.title)
+                                        .rouaFont(.caption, color: .rouaTextSecondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.trailing, UIScreen.main.bounds.width)
+                        }
+                        .disabled(true) // Let it scroll freely
+                    }
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                    .padding(.vertical, RouaSpacing.sm)
+
+                    // Separator
+                    Rectangle()
+                        .fill(Color.rouaGlassBorder.opacity(0.5))
+                        .frame(height: 0.5)
+                }
+                .background(Color.rouaBackgroundLight.opacity(0.5))
+            }
+        }
+    }
+
+    // MARK: - Mode Selector
+
+    private var modeSelectorSection: some View {
+        HStack(spacing: RouaSpacing.xs) {
+            ForEach(TradingMode.allCases, id: \.self) { mode in
+                modePill(mode: mode)
+            }
+        }
+        .padding(.horizontal, RouaSpacing.screenPadding)
+        .padding(.vertical, RouaSpacing.sm)
+    }
+
+    @ViewBuilder
+    private func modePill(mode: TradingMode) -> some View {
+        let isSelected = selectedMode == mode
+
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                selectedMode = mode
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            HStack(spacing: RouaSpacing.xs) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 12))
+
+                Text(mode.displayName)
+                    .rouaFont(.captionBold)
+            }
+            .foregroundStyle(isSelected ? .white : .rouaTextSecondary)
+            .padding(.horizontal, RouaSpacing.md)
+            .padding(.vertical, RouaSpacing.sm)
+            .background(
+                Capsule()
+                    .fill(isSelected ? mode.accentColor.opacity(0.25) : Color.clear)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? mode.accentColor.opacity(0.5) : Color.rouaGlassBorder, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(mode.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     // MARK: - Section 1: Portfolio Summary
 
     private var portfolioSummarySection: some View {
-        GlassCard(glow: .rouaPrimary) {
-            VStack(alignment: .leading, spacing: RouaSpacing.md) {
-                // Total balance
-                VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                    Text("إجمالي المحفظة")
-                        .rouaFont(.subheadline, color: .rouaTextSecondary)
+        ZStack {
+            // Gradient glow effect behind the card (matching web)
+            RoundedRectangle(cornerRadius: RouaSpacing.cardCornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.rouaPrimary.opacity(0.15),
+                            Color.rouaAccent.opacity(0.10),
+                            Color.clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .blur(radius: 24)
+                .padding(.horizontal, -8)
+                .padding(.vertical, -4)
+
+            // Main card
+            GlassCard(glow: .rouaPrimary) {
+                VStack(alignment: .leading, spacing: RouaSpacing.md) {
+                    // Total balance
+                    VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                        HStack(spacing: RouaSpacing.xs) {
+                            Image(systemName: "wallet.fill")
+                                .font(.system(size: RouaSpacing.iconSmall))
+                                .foregroundStyle(.rouaPrimary)
+
+                            Text("إجمالي المحفظة")
+                                .rouaFont(.subheadline, color: .rouaTextSecondary)
+                        }
                         .accessibilityLabel("إجمالي رصيد المحفظة")
 
-                    HStack(alignment: .firstTextBaseline, spacing: RouaSpacing.sm) {
-                        Text(portfolioBalance)
-                            .rouaFont(.largeTitle, color: .rouaTextPrimary)
-                            .monospacedDigit()
+                        HStack(alignment: .firstTextBaseline, spacing: RouaSpacing.sm) {
+                            Text(portfolioBalance)
+                                .rouaFont(.largeTitle, color: .rouaTextPrimary)
+                                .monospacedDigit()
 
-                        Spacer()
+                            Spacer()
 
-                        if let portfolio = viewModel.portfolioSummary, let pnl = portfolio.totalPnl, pnl != 0 {
-                            ChangeBadge(
-                                value: pnl,
-                                percentage: portfolio.totalPnlPct ?? 0
-                            )
+                            if let portfolio = viewModel.portfolioSummary, let pnl = portfolio.totalPnl, pnl != 0 {
+                                ChangeBadge(
+                                    value: pnl,
+                                    percentage: portfolio.totalPnlPct ?? 0
+                                )
+                            }
                         }
                     }
-                }
 
-                // Divider
-                Rectangle()
-                    .fill(Color.rouaGlassBorder)
-                    .frame(height: 1)
-
-                // Mini stat row
-                HStack(spacing: 0) {
-                    StatMini(
-                        label: "ربح اليوم",
-                        value: dayPnL,
-                        change: viewModel.portfolioSummary?.unrealizedPnl
-                    )
-                    .frame(maxWidth: .infinity)
-
+                    // Divider
                     Rectangle()
                         .fill(Color.rouaGlassBorder)
-                        .frame(width: 1, height: 32)
+                        .frame(height: 1)
 
-                    StatMini(
-                        label: "صفقات مفتوحة",
-                        value: "\(viewModel.positionsSummary?.positionCount ?? 0)"
-                    )
-                    .frame(maxWidth: .infinity)
+                    // Mini stat row
+                    HStack(spacing: 0) {
+                        StatMini(
+                            label: "ربح اليوم",
+                            value: dayPnL,
+                            change: viewModel.portfolioSummary?.unrealizedPnl
+                        )
+                        .frame(maxWidth: .infinity)
 
-                    Rectangle()
-                        .fill(Color.rouaGlassBorder)
-                        .frame(width: 1, height: 32)
+                        Rectangle()
+                            .fill(Color.rouaGlassBorder)
+                            .frame(width: 1, height: 32)
 
-                    StatMini(
-                        label: "قيمة المحفظة",
-                        value: portfolioValue
-                    )
-                    .frame(maxWidth: .infinity)
+                        StatMini(
+                            label: "صفقات مفتوحة",
+                            value: "\(viewModel.positionsSummary?.positionCount ?? 0)"
+                        )
+                        .frame(maxWidth: .infinity)
+
+                        Rectangle()
+                            .fill(Color.rouaGlassBorder)
+                            .frame(width: 1, height: 32)
+
+                        StatMini(
+                            label: "قيمة المحفظة",
+                            value: portfolioValue
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
                 }
             }
         }
@@ -577,51 +834,92 @@ struct HomeView: View {
 
     private var loadingShimmerView: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: RouaSpacing.lg) {
-                // Portfolio shimmer
-                VStack(alignment: .leading, spacing: RouaSpacing.sm) {
-                    ShimmerView(width: 120, height: 14)
-                    ShimmerView(width: 200, height: 34)
-                    ShimmerView(height: 1, cornerRadius: 0)
-                    HStack(spacing: RouaSpacing.lg) {
-                        VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                            ShimmerView(width: 60, height: 10)
-                            ShimmerView(width: 80, height: 16)
-                        }
-                        VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                            ShimmerView(width: 60, height: 10)
-                            ShimmerView(width: 80, height: 16)
-                        }
-                        VStack(alignment: .leading, spacing: RouaSpacing.xs) {
-                            ShimmerView(width: 60, height: 10)
-                            ShimmerView(width: 80, height: 16)
-                        }
+            VStack(spacing: 0) {
+                // Header balance shimmer
+                HStack {
+                    VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                        ShimmerView(width: 80, height: 10)
+                        ShimmerView(width: 140, height: 22)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: RouaSpacing.xs) {
+                        ShimmerView(width: 60, height: 10)
+                        ShimmerView(width: 100, height: 18)
                     }
                 }
-                .padding(RouaSpacing.cardPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: RouaSpacing.cardCornerRadius, style: .continuous)
-                        .fill(Color.rouaGlass)
-                )
                 .padding(.horizontal, RouaSpacing.screenPadding)
+                .padding(.vertical, RouaSpacing.md)
 
-                // Movers shimmer
-                VStack(alignment: .leading, spacing: RouaSpacing.sm) {
-                    ShimmerView(width: 100, height: 18)
-                    HStack(spacing: RouaSpacing.md) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            ShimmerView(width: 150, height: 80)
+                // Ticker strip shimmer
+                HStack(spacing: RouaSpacing.lg) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        ShimmerView(width: 100, height: 16, cornerRadius: RouaSpacing.smallCornerRadius)
+                    }
+                }
+                .padding(.horizontal, RouaSpacing.screenPadding)
+                .padding(.vertical, RouaSpacing.sm)
+
+                // News ticker shimmer
+                ShimmerView(height: 20)
+                    .padding(.horizontal, RouaSpacing.screenPadding)
+                    .padding(.vertical, RouaSpacing.sm)
+
+                // Mode selector shimmer
+                HStack(spacing: RouaSpacing.xs) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        ShimmerView(width: 80, height: 30, cornerRadius: RouaSpacing.pillCornerRadius)
+                    }
+                }
+                .padding(.horizontal, RouaSpacing.screenPadding)
+                .padding(.vertical, RouaSpacing.sm)
+
+                // Rest of sections with standard spacing
+                VStack(spacing: RouaSpacing.xl) {
+                    // Portfolio shimmer
+                    VStack(alignment: .leading, spacing: RouaSpacing.sm) {
+                        ShimmerView(width: 120, height: 14)
+                        ShimmerView(width: 200, height: 34)
+                        ShimmerView(height: 1, cornerRadius: 0)
+                        HStack(spacing: RouaSpacing.lg) {
+                            VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                                ShimmerView(width: 60, height: 10)
+                                ShimmerView(width: 80, height: 16)
+                            }
+                            VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                                ShimmerView(width: 60, height: 10)
+                                ShimmerView(width: 80, height: 16)
+                            }
+                            VStack(alignment: .leading, spacing: RouaSpacing.xs) {
+                                ShimmerView(width: 60, height: 10)
+                                ShimmerView(width: 80, height: 16)
+                            }
                         }
                     }
+                    .padding(RouaSpacing.cardPadding)
+                    .background(
+                        RoundedRectangle(cornerRadius: RouaSpacing.cardCornerRadius, style: .continuous)
+                            .fill(Color.rouaGlass)
+                    )
                     .padding(.horizontal, RouaSpacing.screenPadding)
-                }
 
-                // News shimmer
-                VStack(alignment: .leading, spacing: RouaSpacing.sm) {
-                    ShimmerView(width: 80, height: 18)
-                    ForEach(0..<3, id: \.self) { _ in
-                        ShimmerView(height: 60)
-                            .padding(.horizontal, RouaSpacing.screenPadding)
+                    // Movers shimmer
+                    VStack(alignment: .leading, spacing: RouaSpacing.sm) {
+                        ShimmerView(width: 100, height: 18)
+                        HStack(spacing: RouaSpacing.md) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                ShimmerView(width: 150, height: 80)
+                            }
+                        }
+                        .padding(.horizontal, RouaSpacing.screenPadding)
+                    }
+
+                    // News shimmer
+                    VStack(alignment: .leading, spacing: RouaSpacing.sm) {
+                        ShimmerView(width: 80, height: 18)
+                        ForEach(0..<3, id: \.self) { _ in
+                            ShimmerView(height: 60)
+                                .padding(.horizontal, RouaSpacing.screenPadding)
+                        }
                     }
                 }
             }
@@ -645,6 +943,44 @@ struct HomeView: View {
     private var dayPnL: String {
         viewModel.portfolioSummary?.unrealizedPnl.asCurrency() ?? "$0.00"
     }
+
+    // MARK: - Ticker Strip Data
+
+    /// Combines top gainers and losers into a flat list for the ticker strip.
+    private var combinedTickerItems: [TickerStripItem] {
+        var items: [TickerStripItem] = []
+
+        for gainer in viewModel.topGainers.prefix(5) {
+            items.append(TickerStripItem(
+                symbol: gainer.symbol,
+                price: gainer.price.asPrice(),
+                change: gainer.change,
+                changePct: gainer.formattedChangePct
+            ))
+        }
+
+        for loser in viewModel.topLosers.prefix(5) {
+            items.append(TickerStripItem(
+                symbol: loser.symbol,
+                price: loser.price.asPrice(),
+                change: loser.change,
+                changePct: loser.formattedChangePct
+            ))
+        }
+
+        return items
+    }
+}
+
+// MARK: - Ticker Strip Item
+
+/// Lightweight model for the ticker strip display.
+private struct TickerStripItem: Identifiable {
+    let id = UUID()
+    let symbol: String
+    let price: String
+    let change: Double
+    let changePct: String
 }
 
 // MARK: - Preview

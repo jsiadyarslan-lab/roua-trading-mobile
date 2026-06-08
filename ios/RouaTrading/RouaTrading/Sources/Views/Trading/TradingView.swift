@@ -2,8 +2,20 @@
 // TradingView.swift — Roua Trading · Core Trading Screen
 // =============================================================================
 // Full-screen trading view — the heart of the app.
-// Symbol selector, live price, 24h stats, chart, timeframe selector,
-// position tabs, and floating Buy/Sell action buttons.
+// Symbol selector, live price, OHLC bar, chart, buy/sell price bar,
+// chart toolbar, position tabs, and floating Buy/Sell action buttons.
+//
+// Layout (top → bottom, matching web m2-shell):
+// 1. Symbol selector header + live dot
+// 2. Current price + change badge
+// 3. OHLC info bar (O=xxx H=xxx L=xxx C=xxx)
+// 4. 24h stats row (compact)
+// 5. Chart area (ChartView) with volume overlay
+// 6. Buy/Sell price bar (bid/ask spread bar)
+// 7. Chart toolbar (timeframe pills + drawing/indicators/AI buttons)
+// 8. Position tabs (Open / Closed)
+// 9. Position list
+// 10. Floating Buy / Sell buttons (gradient fills)
 //
 // Uses: TradingViewModel, ChartView, RouaComponents, RouaColors, RouaTypography
 // RTL: All layouts use leading/trailing; Arabic labels where specified.
@@ -30,15 +42,11 @@ enum PositionTab: String, CaseIterable {
 
 /// The primary trading screen for the Roua Trading app.
 ///
-/// Layout (top → bottom):
-/// 1. Symbol selector header
-/// 2. Current price + change badge
-/// 3. 24h stats row
-/// 4. Chart area (ChartView)
-/// 5. Timeframe pill selector
-/// 6. Position tabs (Open / Closed)
-/// 7. Position list
-/// 8. Floating Buy / Sell buttons
+/// Matches the web m2-shell trading view layout with:
+/// - OHLC info bar above chart
+/// - Buy/Sell price bar below chart
+/// - Chart toolbar with timeframe pills + tool buttons
+/// - Gradient-styled floating Buy/Sell buttons
 struct TradingView: View {
 
     // MARK: - ViewModel
@@ -80,9 +88,11 @@ struct TradingView: View {
                 VStack(spacing: 0) {
                     symbolHeader
                     priceSection
+                    ohlcBar
                     statsRow
                     chartSection
-                    timeframeSelector
+                    buySellPriceBar
+                    chartToolbar
                     positionSection
                 }
                 .padding(.bottom, RouaSpacing.buttonHeightLarge + RouaSpacing.lg)
@@ -182,24 +192,27 @@ struct TradingView: View {
     private var priceSection: some View {
         VStack(alignment: .leading, spacing: RouaSpacing.xs) {
             if let quote = viewModel.currentQuote {
-                // Current price
-                Text(quote.price.asPrice())
-                    .rouaFont(.largeTitle, color: .rouaTextPrimary)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.3), value: quote.price)
-                    .id(quote.price) // Force re-render for price flash
+                HStack(alignment: .firstTextBaseline, spacing: RouaSpacing.sm) {
+                    // Current price
+                    Text(quote.price.asPrice())
+                        .rouaFont(.largeTitle, color: .rouaTextPrimary)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.3), value: quote.price)
+                        .id(quote.price) // Force re-render for price flash
 
-                // Change badge
-                ChangeBadge(
-                    value: quote.change,
-                    percentage: quote.changePct
-                )
+                    // Change badge
+                    ChangeBadge(
+                        value: quote.change,
+                        percentage: quote.changePct
+                    )
+                }
             } else {
                 // Shimmer loading
-                ShimmerView(width: 180, height: 34)
-                    .padding(.bottom, 2)
-                ShimmerView(width: 120, height: 24)
+                HStack(spacing: RouaSpacing.sm) {
+                    ShimmerView(width: 180, height: 34)
+                    ShimmerView(width: 120, height: 24)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,56 +220,125 @@ struct TradingView: View {
         .padding(.vertical, RouaSpacing.xs)
     }
 
-    // MARK: - Stats Row
+    // MARK: - OHLC Bar
 
-    private var statsRow: some View {
+    /// Compact horizontal bar showing Open, High, Low, Close values from
+    /// the latest candle. Matches the web's OHLC info bar above the chart.
+    private var ohlcBar: some View {
+        let latestCandle = viewModel.liveCandle ?? viewModel.candles.last
         let quote = viewModel.currentQuote
 
-        return GlassCard {
-            HStack(spacing: 0) {
-                StatMini(
-                    label: "أعلى 24س",  // 24h High
-                    value: quote?.high.asPrice() ?? "—"
-                )
-                .frame(maxWidth: .infinity)
+        return HStack(spacing: 0) {
+            // Open
+            ohlcItem(
+                label: "O",
+                value: latestCandle?.open ?? quote?.open ?? 0,
+                isPositive: latestCandle.map { $0.close >= $0.open } ?? quote.map { $0.change >= 0 } ?? true
+            )
+            .frame(maxWidth: .infinity)
 
-                Divider()
-                    .background(Color.rouaBorder)
-                    .frame(height: 32)
-                    .padding(.horizontal, RouaSpacing.xs)
+            // High (always green — it's the high)
+            ohlcItem(
+                label: "H",
+                value: latestCandle?.high ?? quote?.high ?? 0,
+                isPositive: true
+            )
+            .frame(maxWidth: .infinity)
 
-                StatMini(
-                    label: "أدنى 24س",  // 24h Low
-                    value: quote?.low.asPrice() ?? "—"
-                )
-                .frame(maxWidth: .infinity)
+            // Low (always red — it's the low)
+            ohlcItem(
+                label: "L",
+                value: latestCandle?.low ?? quote?.low ?? 0,
+                isPositive: false
+            )
+            .frame(maxWidth: .infinity)
 
-                Divider()
-                    .background(Color.rouaBorder)
-                    .frame(height: 32)
-                    .padding(.horizontal, RouaSpacing.xs)
-
-                StatMini(
-                    label: "الحجم",     // Volume
-                    value: quote.map { $0.volume.asCompact() } ?? "—"
-                )
-                .frame(maxWidth: .infinity)
-
-                Divider()
-                    .background(Color.rouaBorder)
-                    .frame(height: 32)
-                    .padding(.horizontal, RouaSpacing.xs)
-
-                StatMini(
-                    label: "التغيير",   // Change
-                    value: quote.map { $0.changePct.asPercentage() } ?? "—",
-                    change: quote?.changePct
-                )
-                .frame(maxWidth: .infinity)
-            }
+            // Close
+            ohlcItem(
+                label: "C",
+                value: latestCandle?.close ?? quote?.price ?? 0,
+                isPositive: latestCandle.map { $0.close >= $0.open } ?? quote.map { $0.change >= 0 } ?? true
+            )
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, RouaSpacing.screenPadding)
         .padding(.vertical, RouaSpacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("OHLC: Open \(latestCandle?.open.asPrice() ?? "—"), High \(latestCandle?.high.asPrice() ?? "—"), Low \(latestCandle?.low.asPrice() ?? "—"), Close \(latestCandle?.close.asPrice() ?? "—")")
+    }
+
+    /// Single OHLC item (label + value).
+    private func ohlcItem(label: String, value: Double, isPositive: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .rouaFont(.captionBold, color: .rouaTextTertiary)
+                .monospacedDigit()
+
+            Text(value.asPrice())
+                .rouaFont(.caption, color: isPositive ? .rouaProfit : .rouaLoss)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+    }
+
+    // MARK: - Stats Row
+
+    /// Compact 24h stats row matching web style.
+    private var statsRow: some View {
+        let quote = viewModel.currentQuote
+
+        return HStack(spacing: 0) {
+            // 24h High
+            VStack(alignment: .leading, spacing: 2) {
+                Text("أعلى 24س")  // 24h High
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .lineLimit(1)
+                Text(quote?.high.asPrice() ?? "—")
+                    .rouaFont(.captionBold, color: .rouaTextPrimary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            // 24h Low
+            VStack(alignment: .leading, spacing: 2) {
+                Text("أدنى 24س")  // 24h Low
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .lineLimit(1)
+                Text(quote?.low.asPrice() ?? "—")
+                    .rouaFont(.captionBold, color: .rouaTextPrimary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            // Volume
+            VStack(alignment: .leading, spacing: 2) {
+                Text("الحجم")     // Volume
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .lineLimit(1)
+                Text(quote.map { $0.volume.asCompact() } ?? "—")
+                    .rouaFont(.captionBold, color: .rouaTextPrimary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            // Change
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("التغيير")   // Change
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .lineLimit(1)
+                Text(quote.map { $0.changePct.asPercentage() } ?? "—")
+                    .rouaFont(.captionBold, color: .rouaPnLColor(value: quote?.changePct ?? 0))
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, RouaSpacing.screenPadding)
+        .padding(.vertical, RouaSpacing.xs)
+        .background(Color.rouaGlass)
     }
 
     // MARK: - Chart Section
@@ -292,22 +374,98 @@ struct TradingView: View {
         }
     }
 
-    // MARK: - Timeframe Selector
+    // MARK: - Buy/Sell Price Bar
 
-    private var timeframeSelector: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+    /// Bid/Ask spread bar below the chart, matching web's 44px bar.
+    /// Left side = bid (green), Right side = ask (red).
+    private var buySellPriceBar: some View {
+        let quote = viewModel.currentQuote
+        let bidPrice = quote?.bid ?? quote?.price
+        let askPrice = quote?.ask ?? quote?.price
+
+        return HStack(spacing: 1) {
+            // Bid (Buy) side — green background
             HStack(spacing: RouaSpacing.sm) {
-                ForEach(CandleInterval.allCases) { interval in
-                    TimeframePill(
-                        title: interval.displayName,
-                        isSelected: viewModel.selectedTimeframe == interval,
-                        action: { viewModel.switchTimeframe(interval) }
-                    )
+                Text("شراء")  // Buy
+                    .rouaFont(.caption, color: .white.opacity(0.9))
+                Spacer()
+                Text(bidPrice?.asPrice() ?? "—")
+                    .rouaFont(.calloutBold, color: .white)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, RouaSpacing.md)
+            .padding(.vertical, RouaSpacing.sm)
+            .frame(maxWidth: .infinity)
+            .background(Color.rouaGradientProfit)
+
+            // Ask (Sell) side — red background
+            HStack(spacing: RouaSpacing.sm) {
+                Text(askPrice?.asPrice() ?? "—")
+                    .rouaFont(.calloutBold, color: .white)
+                    .monospacedDigit()
+                Spacer()
+                Text("بيع")  // Sell
+                    .rouaFont(.caption, color: .white.opacity(0.9))
+            }
+            .padding(.horizontal, RouaSpacing.md)
+            .padding(.vertical, RouaSpacing.sm)
+            .frame(maxWidth: .infinity)
+            .background(Color.rouaGradientLoss)
+        }
+        .frame(height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.smallCornerRadius, style: .continuous))
+        .padding(.horizontal, RouaSpacing.screenPadding)
+        .padding(.vertical, RouaSpacing.xs)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Bid \(bidPrice?.asPrice() ?? "—"), Ask \(askPrice?.asPrice() ?? "—")")
+    }
+
+    // MARK: - Chart Toolbar
+
+    /// Toolbar below chart with timeframe selector pills + tool buttons
+    /// (drawing, indicators, AI analysis). Matches web chart toolbar.
+    private var chartToolbar: some View {
+        HStack(spacing: RouaSpacing.sm) {
+            // Timeframe pills — scrollable
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: RouaSpacing.xs) {
+                    ForEach(CandleInterval.allCases) { interval in
+                        TimeframePill(
+                            title: interval.displayName,
+                            isSelected: viewModel.selectedTimeframe == interval,
+                            action: { viewModel.switchTimeframe(interval) }
+                        )
+                    }
                 }
             }
-            .padding(.horizontal, RouaSpacing.screenPadding)
+
+            // Spacer to push tool buttons to trailing edge
+            Spacer(minLength: RouaSpacing.xs)
+
+            // Drawing tools button
+            ChartToolButton(
+                icon: "pencil.line",
+                label: "رسم",  // Drawing
+                action: { /* TODO: Open drawing tools */ }
+            )
+
+            // Indicators button
+            ChartToolButton(
+                icon: "chart.bar.fill",
+                label: "مؤشرات",  // Indicators
+                action: { /* TODO: Open indicators panel */ }
+            )
+
+            // AI analysis button
+            ChartToolButton(
+                icon: "brain.head.profile.fill",
+                label: "ذكاء",  // AI
+                accentColor: .rouaAccent,
+                action: { /* TODO: Open AI analysis */ }
+            )
         }
-        .padding(.vertical, RouaSpacing.sm)
+        .padding(.horizontal, RouaSpacing.screenPadding)
+        .padding(.vertical, RouaSpacing.xs)
     }
 
     // MARK: - Position Section
@@ -442,33 +600,59 @@ struct TradingView: View {
 
     // MARK: - Floating Action Buttons
 
+    /// Gradient-styled Buy/Sell buttons matching web design.
+    /// Buy button uses rouaGradientProfit, Sell uses rouaGradientLoss.
     private var floatingActionButtons: some View {
         HStack(spacing: RouaSpacing.md) {
-            // Buy Button
-            RouaButton(
-                "شراء",  // Buy
-                variant: .primary,
-                size: .large,
-                icon: "arrowtriangle.up.fill",
-                iconPosition: .leading
-            ) {
+            // Buy Button — green gradient fill
+            Button {
                 orderSide = .buy
                 showOrderSheet = true
+            } label: {
+                HStack(spacing: RouaSpacing.sm) {
+                    Image(systemName: "arrowtriangle.up.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text("شراء")  // Buy
+                        .rouaFont(.headline, color: .white)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: RouaSpacing.buttonHeightLarge)
+                .background(Color.rouaGradientProfit)
+                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
             }
-            .background(Color.rouaGradientProfit)
-            .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous))
+            .buttonStyle(.plain)
+            .accessibilityLabel("Buy")
+            .accessibilityAddTraits(.isButton)
 
-            // Sell Button
-            RouaButton(
-                "بيع",  // Sell
-                variant: .danger,
-                size: .large,
-                icon: "arrowtriangle.down.fill",
-                iconPosition: .leading
-            ) {
+            // Sell Button — red gradient fill
+            Button {
                 orderSide = .sell
                 showOrderSheet = true
+            } label: {
+                HStack(spacing: RouaSpacing.sm) {
+                    Image(systemName: "arrowtriangle.down.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text("بيع")  // Sell
+                        .rouaFont(.headline, color: .white)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: RouaSpacing.buttonHeightLarge)
+                .background(Color.rouaGradientLoss)
+                .clipShape(RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: RouaSpacing.buttonCornerRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Sell")
+            .accessibilityAddTraits(.isButton)
         }
         .padding(.horizontal, RouaSpacing.screenPadding)
         .padding(.vertical, RouaSpacing.sm)
@@ -480,6 +664,48 @@ struct TradingView: View {
             )
             .frame(height: 80)
         )
+    }
+}
+
+// MARK: - Chart Tool Button
+
+/// Icon button for chart toolbar actions (drawing, indicators, AI).
+/// Compact circular button with icon and optional label.
+struct ChartToolButton: View {
+
+    let icon: String
+    let label: String
+    var accentColor: Color = .rouaPrimary
+    let action: () -> Void
+
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(accentColor)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(accentColor.opacity(0.12))
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(accentColor.opacity(0.25), lineWidth: 0.5)
+                    )
+
+                Text(label)
+                    .rouaFont(.micro, color: .rouaTextTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isPressed ? 0.92 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isPressed)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
 }
 

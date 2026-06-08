@@ -520,3 +520,31 @@ enum UserTier: String, Codable {
     /// Whether this tier is at least Pro.
     var isProOrAbove: Bool { self != .free }
 }
+
+// MARK: - Flexible Double Decoding
+
+extension KeyedDecodingContainer {
+    /// Decodes a `Double?` that may come as either a JSON number or a string.
+    ///
+    /// The NestJS backend V1 endpoints return raw Prisma `Decimal` objects
+    /// which serialize as strings (e.g. `"123.45"` instead of `123.45`).
+    /// The V2 endpoints return clean numbers. This method handles both formats.
+    ///
+    /// Returns `nil` if the key is missing or the value cannot be parsed.
+    func decodeFlexibleDouble(forKey key: Key) -> Double? {
+        // Try 1: JSON number (standard)
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        // Try 2: String that contains a number (Prisma Decimal)
+        if let stringValue = try? decodeIfPresent(String.self, forKey: key),
+           let parsed = Double(stringValue) {
+            return parsed
+        }
+        // Try 3: Integer value (some fields may come as Int)
+        if let intValue = try? decodeIfPresent(Int.self, forKey: key) {
+            return Double(intValue)
+        }
+        return nil
+    }
+}

@@ -109,6 +109,79 @@ struct Position: Codable, Identifiable, Hashable {
     /// Position type from backend (may differ from OrderSide).
     let type: String?
 
+    // ---- Coding Keys (backend → Swift) ----
+    // Backend V2 sends "unrealizedPnL" (capital L);
+    // our property is "unrealizedPnl" (lowercase l).
+    enum CodingKeys: String, CodingKey {
+        case id
+        case symbol
+        case side
+        case entryPrice
+        case currentPrice
+        case quantity
+        case unrealizedPnl = "unrealizedPnL"   // Backend: unrealizedPnL (capital L)
+        case unrealizedPnlPct                  // May not be present in V2
+        case stopLoss
+        case takeProfit
+        case leverage
+        case margin
+        case openedAt
+        case closedAt
+        case status
+        case type
+        // Extra fields from V2 that we don't use but must accept
+        case exchange
+        case source
+        case exchangeSymbol
+        case credentialId
+        case realizedPnl
+        case highestPrice
+        case lowestPrice
+        case closeReason
+        case version
+    }
+
+    // ---- Custom Decoder with flexible status ----
+    // The V2 PositionInfo doesn't include "status"; default to .open.
+    // The V1 raw Prisma objects include Decimal strings for numeric fields.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id              = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        symbol          = try c.decodeIfPresent(String.self, forKey: .symbol) ?? ""
+
+        // Side: try enum first, fallback to raw string parsing
+        if let sideValue = try? c.decodeIfPresent(OrderSide.self, forKey: .side) {
+            side = sideValue
+        } else if let sideStr = try? c.decodeIfPresent(String.self, forKey: .side) {
+            side = sideStr.uppercased() == "SELL" ? .sell : .buy
+        } else {
+            side = .buy
+        }
+
+        // Numeric fields: accept both Number and String (Prisma Decimal)
+        entryPrice      = try c.decodeFlexibleDouble(forKey: .entryPrice) ?? 0
+        currentPrice    = try c.decodeFlexibleDouble(forKey: .currentPrice)
+        quantity        = try c.decodeFlexibleDouble(forKey: .quantity) ?? 0
+        unrealizedPnl   = try c.decodeFlexibleDouble(forKey: .unrealizedPnl) ?? 0
+        unrealizedPnlPct = try c.decodeFlexibleDouble(forKey: .unrealizedPnlPct)
+        stopLoss        = try c.decodeFlexibleDouble(forKey: .stopLoss)
+        takeProfit      = try c.decodeFlexibleDouble(forKey: .takeProfit)
+        leverage        = try c.decodeFlexibleDouble(forKey: .leverage)
+        margin          = try c.decodeFlexibleDouble(forKey: .margin)
+
+        openedAt        = try c.decodeIfPresent(String.self, forKey: .openedAt) ?? ""
+        closedAt        = try c.decodeIfPresent(String.self, forKey: .closedAt)
+
+        // Status: V2 doesn't always include it; default to .open
+        if let statusValue = try? c.decodeIfPresent(PositionStatus.self, forKey: .status) {
+            status = statusValue
+        } else {
+            status = (closedAt != nil) ? .closed : .open
+        }
+
+        type = try c.decodeIfPresent(String.self, forKey: .type)
+    }
+
     // ---- Computed helpers ----
 
     /// Current notional value of the position.
@@ -143,6 +216,40 @@ struct PositionSummary: Codable {
     let totalPositionValue: Double
     let positionCount: Int
     let positions: [Position]
+
+    // ---- Coding Keys (backend → Swift) ----
+    // V1 /trading/positions/summary uses different field names:
+    //   totalPositions  → positionCount
+    //   totalValue      → totalPositionValue
+    //   totalUnrealizedPnl → same
+    //   totalRealizedPnl   → not in our model (extra field, OK)
+    //   usedMargin         → not in our model (extra field, OK)
+    enum CodingKeys: String, CodingKey {
+        case totalUnrealizedPnl
+        case totalPositionValue = "totalValue"        // V1 uses totalValue
+        case positionCount = "totalPositions"          // V1 uses totalPositions
+        case positions
+        // Extra fields from V1 that we accept but don't store
+        case totalRealizedPnl
+        case usedMargin
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalUnrealizedPnl = try c.decodeIfPresent(Double.self, forKey: .totalUnrealizedPnl) ?? 0
+        totalPositionValue = try c.decodeIfPresent(Double.self, forKey: .totalPositionValue) ?? 0
+        positionCount      = try c.decodeIfPresent(Int.self, forKey: .positionCount) ?? 0
+        positions          = try c.decodeIfPresent([Position].self, forKey: .positions) ?? []
+    }
+
+    /// Convenience init for creating default / fallback summary.
+    init(totalUnrealizedPnl: Double = 0, totalPositionValue: Double = 0,
+         positionCount: Int = 0, positions: [Position] = []) {
+        self.totalUnrealizedPnl = totalUnrealizedPnl
+        self.totalPositionValue = totalPositionValue
+        self.positionCount = positionCount
+        self.positions = positions
+    }
 
     /// Net PnL percentage across all positions.
     var totalPnlPct: Double {

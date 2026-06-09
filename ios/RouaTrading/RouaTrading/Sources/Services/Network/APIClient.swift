@@ -112,6 +112,12 @@ final class APIClient {
     /// Whether a token refresh is currently in progress (prevents concurrent refreshes).
     private var isRefreshing = false
 
+    /// Pending continuations that are waiting for a token refresh to complete.
+    /// Instead of throwing `sessionExpired` for concurrent 401s, we queue them
+    /// and resume them after the refresh finishes — this prevents data loading
+    /// failures during a refresh.
+    private var pendingRefreshContinuations: [CheckedContinuation<Bool, Error>] = []
+
     /// Maximum number of automatic retries for transient failures.
     private let maxRetries = 2
 
@@ -419,17 +425,43 @@ final class APIClient {
     ) async throws -> Data {
         logger.info("🔐 401 received — attempting token refresh")
 
-        // Prevent concurrent refreshes
-        guard !isRefreshing else {
-            throw APIError.sessionExpired
+        // If a refresh is already in progress, WAIT for it to complete
+        // instead of throwing sessionExpired. This prevents data loading
+        // failures when multiple requests hit 401 simultaneously.
+        if isRefreshing {
+            let refreshed = try await waitForRefresh()
+            guard refreshed else {
+                throw APIError.sessionExpired
+            }
+            // Retry the original request with the new token
+            return try await executeRequest(
+                endpoint,
+                body: body,
+                queryItems: queryItems,
+                retryCount: retryCount + 1
+            )
         }
 
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            isRefreshing = false
+            // Resume all pending waiters
+            let continuations = pendingRefreshContinuations
+            pendingRefreshContinuations = []
+            for cont in continuations {
+                cont.resume(returning: true)
+            }
+        }
 
         do {
             let refreshed = try await refreshSession()
             guard refreshed else {
+                // Notify waiters that refresh failed
+                let continuations = pendingRefreshContinuations
+                pendingRefreshContinuations = []
+                for cont in continuations {
+                    cont.resume(throwing: APIError.sessionExpired)
+                }
                 throw APIError.sessionExpired
             }
 
@@ -440,9 +472,36 @@ final class APIClient {
                 queryItems: queryItems,
                 retryCount: retryCount + 1
             )
+        } catch let error as APIError {
+            // Re-throw API errors from the retry as-is (e.g., network errors,
+            // rate limits) — don't convert them to sessionExpired
+            logger.error("Request failed after token refresh: \(error)")
+            let continuations = pendingRefreshContinuations
+            pendingRefreshContinuations = []
+            for cont in continuations {
+                cont.resume(throwing: APIError.sessionExpired)
+            }
+            throw error
         } catch {
             logger.error("Token refresh failed: \(error)")
+            // Notify waiters that refresh failed
+            let continuations = pendingRefreshContinuations
+            pendingRefreshContinuations = []
+            for cont in continuations {
+                cont.resume(throwing: APIError.sessionExpired)
+            }
+            // Post notification so AuthViewModel can update isAuthenticated state.
+            // Without this, the user appears "logged in" but all data loads fail.
+            NotificationCenter.default.post(name: .sessionDidExpire, object: nil)
             throw APIError.sessionExpired
+        }
+    }
+
+    /// Waits for an in-progress token refresh to complete.
+    /// Returns true if the refresh succeeded, false or throws if it failed.
+    private func waitForRefresh() async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            pendingRefreshContinuations.append(continuation)
         }
     }
 
@@ -459,19 +518,25 @@ final class APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // CRITICAL: Send X-Platform header so the backend knows this is a mobile
+        // client and includes sessionToken + refreshToken in the JSON response body.
+        // Without this header, the backend only returns tokens via Set-Cookie headers,
+        // which iOS URLSession cannot reliably read (httpShouldSetCookies = false).
+        request.setValue("ios", forHTTPHeaderField: "X-Platform")
         // Send refresh token via multiple mechanisms for maximum backend compatibility:
         // 1. Cookie header — backend's session middleware checks this
         // 2. Authorization header — backend's extractSessionToken checks this
         // 3. x-roua-refresh custom header — backend explicitly checks this
-        // 4. x-roua-session — also send session token if available
+        //
+        // CRITICAL FIX: Do NOT send the expired session token during refresh!
+        // If we send both x-roua-session (expired) and x-roua-refresh (valid),
+        // the backend's Strategy 2 looks up the expired session first and
+        // returns INVALID_SESSION immediately — without ever checking the
+        // refresh token. By only sending the refresh token, the backend uses
+        // Strategy 1 which correctly creates a new session from the refresh token.
         request.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
         request.setValue("Bearer \(refreshToken)", forHTTPHeaderField: "Authorization")
         request.setValue(refreshToken, forHTTPHeaderField: "x-roua-refresh")
-        if let sessionToken = keychain.retrieve(key: AppConfig.sessionTokenKey) {
-            request.setValue(sessionToken, forHTTPHeaderField: "x-roua-session")
-            // Also include session in cookie for complete compatibility
-            request.setValue("roua_session=\(sessionToken); roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
-        }
 
         let (data, response) = try await session.data(for: request)
 

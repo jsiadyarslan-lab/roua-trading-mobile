@@ -87,6 +87,11 @@ final class AuthViewModel: ObservableObject {
 
         // Observe AuthService published properties to stay in sync
         observeAuthService()
+
+        // Observe session expiry notification from APIClient — when the
+        // token refresh fails, APIClient posts .sessionDidExpire so we
+        // can update isAuthenticated and show the login screen.
+        observeSessionExpiry()
     }
 
     deinit {
@@ -335,4 +340,24 @@ final class AuthViewModel: ObservableObject {
 
     /// Combine cancellables for observing AuthService.
     private var cancellables = Set<AnyCancellable>()
+
+    /// Observes the .sessionDidExpire notification from APIClient.
+    /// When the token refresh fails, this resets the auth state so
+    /// the user is shown the login screen instead of being stuck in
+    /// a "logged in but no data" state.
+    private func observeSessionExpiry() {
+        NotificationCenter.default.addObserver(
+            forName: .sessionDidExpire,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.authService.clearSession()
+                self.isAuthenticated = false
+                self.currentUser = nil
+                self.logger.warning("Session expired — user logged out")
+            }
+        }
+    }
 }

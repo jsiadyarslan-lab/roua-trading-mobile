@@ -178,7 +178,7 @@ final class BinanceAPIService {
             source: "binance_api"
         )
 
-        logger.debug("📊 Binance ticker: \(symbol) = $\(String(format: "%.2", quote.price))")
+        logger.debug("📊 Binance ticker: \(symbol) = $\(String(format: "%.2f", quote.price))")
         return quote
     }
 }

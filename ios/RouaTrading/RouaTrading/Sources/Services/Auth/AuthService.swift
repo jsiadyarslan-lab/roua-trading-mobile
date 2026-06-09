@@ -262,6 +262,18 @@ final class AuthService: ObservableObject {
                     }
                     logger.info("Session validated (legacy format) for user: \(sessionInfo.user.email)")
                 }
+
+                // Defensive: If the response includes tokens (e.g., from /auth/me creating
+                // a new session via email login), store them. This ensures tokens are
+                // always up-to-date even if they were refreshed server-side.
+                if let sessionToken = json["sessionToken"] as? String {
+                    keychain.store(key: AppConfig.sessionTokenKey, value: sessionToken)
+                    logger.info("Session token updated from /auth/me response")
+                }
+                if let refreshToken = json["refreshToken"] as? String {
+                    keychain.store(key: AppConfig.refreshTokenKey, value: refreshToken)
+                    logger.info("Refresh token updated from /auth/me response")
+                }
             } else {
                 // Fallback: try decoding as SessionInfo directly
                 let sessionInfo: SessionInfo = try await apiClient.request(.authSession)

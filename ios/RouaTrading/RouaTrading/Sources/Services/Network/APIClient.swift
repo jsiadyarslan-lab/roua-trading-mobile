@@ -459,8 +459,19 @@ final class APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Send refresh token as Cookie header AND as JSON body for maximum compatibility
+        // Send refresh token via multiple mechanisms for maximum backend compatibility:
+        // 1. Cookie header — backend's session middleware checks this
+        // 2. Authorization header — backend's extractSessionToken checks this
+        // 3. x-roua-refresh custom header — backend explicitly checks this
+        // 4. x-roua-session — also send session token if available
         request.setValue("roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        request.setValue("Bearer \(refreshToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(refreshToken, forHTTPHeaderField: "x-roua-refresh")
+        if let sessionToken = keychain.retrieve(key: AppConfig.sessionTokenKey) {
+            request.setValue(sessionToken, forHTTPHeaderField: "x-roua-session")
+            // Also include session in cookie for complete compatibility
+            request.setValue("roua_session=\(sessionToken); roua_refresh=\(refreshToken)", forHTTPHeaderField: "Cookie")
+        }
 
         let (data, response) = try await session.data(for: request)
 

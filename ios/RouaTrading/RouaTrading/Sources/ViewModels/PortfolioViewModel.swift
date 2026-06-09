@@ -48,6 +48,10 @@ final class PortfolioViewModel: ObservableObject {
     /// `/trading/portfolio` does and returns richer data.
     @Published var portfolioSummary: PortfolioSummary?
 
+    /// Live exchange balances from `/portfolio/credentials/balances`.
+    /// This is the SAME endpoint the web platform uses for real balance.
+    @Published var liveBalances: Balances?
+
     /// Comprehensive risk assessment for the portfolio.
     @Published var riskReport: RiskReport?
 
@@ -82,6 +86,7 @@ final class PortfolioViewModel: ObservableObject {
         Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.loadCredentials() }
+                group.addTask { await self.loadLiveBalances() }
                 group.addTask { await self.loadPortfolioSummary() }
                 group.addTask { await self.loadRiskReport() }
                 group.addTask { await self.loadAgentStatus() }
@@ -104,6 +109,23 @@ final class PortfolioViewModel: ObservableObject {
             logger.error("Failed to load credentials: \(error.localizedDescription)")
             // Don't set errorMessage — credentials require auth and may fail
             // for unauthenticated users. Show empty state instead of error.
+        }
+    }
+
+    // MARK: - Live Balances (from real exchange APIs)
+
+    /// Loads LIVE exchange balances from `/portfolio/credentials/balances`.
+    ///
+    /// This is the SAME endpoint the web platform uses. It calls Binance/OKX
+    /// directly and returns the REAL balance (e.g., $5000), not a stale DB
+    /// value from the Portfolio table.
+    func loadLiveBalances() async {
+        do {
+            let balances: Balances = try await apiClient.request(.portfolioBalances)
+            self.liveBalances = balances
+        } catch {
+            logger.error("Failed to load live balances: \(error.localizedDescription)")
+            // Don't block the UI — portfolioSummary is still available as fallback
         }
     }
 

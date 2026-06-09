@@ -47,17 +47,150 @@ struct CreateCredentialRequest: Codable {
 
 // MARK: - Balances
 
-/// Aggregate balance snapshot for a credential.
+/// Aggregate balance snapshot from ALL linked exchange accounts.
+///
+/// The backend `/portfolio/credentials/balances` returns:
+/// ```json
+/// {
+///   "totalEquityUsd": 5000,
+///   "totalAvailableUsd": 4500,
+///   "totalUsedMargin": 500,
+///   "exchanges": [...],
+///   "allRealExchangesFailed": false,
+///   "hasRealCredentials": true
+/// }
+/// ```
+/// This is the SAME endpoint the web platform uses for displaying
+/// live exchange balances. Previously, iOS used `/trading/portfolio`
+/// which reads from a stale Portfolio DB table — causing $500 instead
+/// of $5000 (the real Binance balance).
 struct Balances: Codable {
-    let totalBalance: Double
-    let availableBalance: Double
-    let totalPnl: Double
-    let assets: [AssetBalance]
+    /// Total equity across all exchanges in USD (live from Binance, etc.)
+    let totalEquityUsd: Double
+    /// Total available (not in margin) across all exchanges
+    let totalAvailableUsd: Double
+    /// Total used margin across all exchanges
+    let totalUsedMargin: Double
+    /// Per-exchange breakdown
+    let exchanges: [ExchangeBalance]?
+    /// Whether all real exchange connections failed
+    let allRealExchangesFailed: Bool?
+    /// Whether the user has real (non-paper) credentials
+    let hasRealCredentials: Bool?
+
+    // Legacy fields for backward compatibility
+    let totalBalance: Double?
+    let availableBalance: Double?
+    let totalPnl: Double?
+    let assets: [AssetBalance]?
+
+    enum CodingKeys: String, CodingKey {
+        case totalEquityUsd
+        case totalAvailableUsd
+        case totalUsedMargin
+        case exchanges
+        case allRealExchangesFailed
+        case hasRealCredentials
+        case totalBalance
+        case availableBalance
+        case totalPnl
+        case assets
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        totalEquityUsd         = try c.decodeIfPresent(Double.self, forKey: .totalEquityUsd) ?? 0
+        totalAvailableUsd      = try c.decodeIfPresent(Double.self, forKey: .totalAvailableUsd) ?? 0
+        totalUsedMargin        = try c.decodeIfPresent(Double.self, forKey: .totalUsedMargin) ?? 0
+        exchanges              = try c.decodeIfPresent([ExchangeBalance].self, forKey: .exchanges)
+        allRealExchangesFailed = try c.decodeIfPresent(Bool.self, forKey: .allRealExchangesFailed)
+        hasRealCredentials     = try c.decodeIfPresent(Bool.self, forKey: .hasRealCredentials)
+        totalBalance           = try c.decodeIfPresent(Double.self, forKey: .totalBalance)
+        availableBalance       = try c.decodeIfPresent(Double.self, forKey: .availableBalance)
+        totalPnl              = try c.decodeIfPresent(Double.self, forKey: .totalPnl)
+        assets                 = try c.decodeIfPresent([AssetBalance].self, forKey: .assets)
+    }
+
+    /// The best available balance — prefer live exchange equity, fall back to totalBalance
+    var effectiveBalance: Double {
+        totalEquityUsd > 0 ? totalEquityUsd : (totalBalance ?? 0)
+    }
+
+    /// The best available balance for display
+    var effectiveAvailable: Double {
+        totalAvailableUsd > 0 ? totalAvailableUsd : (availableBalance ?? 0)
+    }
 
     /// Number of non-zero asset positions.
     var activeAssetCount: Int {
-        assets.filter { $0.total > 0 }.count
+        assets?.filter { $0.total > 0 }.count ?? 0
     }
+
+    /// Whether we're showing live exchange data (not stale DB data)
+    var isLiveExchangeData: Bool {
+        totalEquityUsd > 0 && (hasRealCredentials ?? false)
+    }
+
+    /// Direct memberwise init
+    init(totalEquityUsd: Double = 0, totalAvailableUsd: Double = 0,
+         totalUsedMargin: Double = 0, exchanges: [ExchangeBalance]? = nil,
+         allRealExchangesFailed: Bool? = nil, hasRealCredentials: Bool? = nil,
+         totalBalance: Double? = nil, availableBalance: Double? = nil,
+         totalPnl: Double? = nil, assets: [AssetBalance]? = nil) {
+        self.totalEquityUsd = totalEquityUsd
+        self.totalAvailableUsd = totalAvailableUsd
+        self.totalUsedMargin = totalUsedMargin
+        self.exchanges = exchanges
+        self.allRealExchangesFailed = allRealExchangesFailed
+        self.hasRealCredentials = hasRealCredentials
+        self.totalBalance = totalBalance
+        self.availableBalance = availableBalance
+        self.totalPnl = totalPnl
+        self.assets = assets
+    }
+}
+
+// MARK: - Exchange Balance
+
+/// Balance from a single exchange connection.
+struct ExchangeBalance: Codable, Identifiable {
+    var id: String { exchange }
+
+    let exchange: String
+    let equity: Double
+    let available: Double
+    let usedMargin: Double?
+    let assets: [ExchangeAsset]?
+
+    /// Display name for the exchange
+    var displayName: String {
+        switch exchange.lowercased() {
+        case "binance": return "Binance"
+        case "okx": return "OKX"
+        case "bybit": return "Bybit"
+        case "paper-trading": return "Paper Trading"
+        default: return exchange.capitalized
+        }
+    }
+
+    /// Whether this is a paper trading account
+    var isPaperTrading: Bool {
+        exchange.lowercased() == "paper-trading"
+    }
+}
+
+// MARK: - Exchange Asset
+
+/// A single asset within an exchange account.
+struct ExchangeAsset: Codable, Identifiable {
+    var id: String { "\(currency)-\(exchange ?? "")" }
+
+    let currency: String
+    let free: Double?
+    let used: Double?
+    let total: Double?
+    let usdValue: Double?
+    let exchange: String?
 }
 
 // MARK: - Asset Balance

@@ -57,6 +57,10 @@ final class HomeViewModel: ObservableObject {
     /// Full portfolio snapshot including balances and positions.
     @Published var portfolioSummary: PortfolioSummary?
 
+    /// Live exchange balances — same endpoint the web platform uses.
+    /// This shows the REAL balance from Binance/etc., not a stale DB value.
+    @Published var liveBalances: Balances?
+
     /// Whether a loading operation is in progress.
     @Published var isLoading: Bool = false
 
@@ -93,6 +97,7 @@ final class HomeViewModel: ObservableObject {
                 group.addTask { await self.loadSignals() }
                 group.addTask { await self.loadPositions() }
                 group.addTask { await self.loadPortfolio() }
+                group.addTask { await self.loadLiveBalances() }
             }
 
             isLoading = false
@@ -238,6 +243,25 @@ final class HomeViewModel: ObservableObject {
                     positions: []
                 )
             }
+        }
+    }
+
+    /// Loads LIVE exchange balances from `/portfolio/credentials/balances`.
+    ///
+    /// This is the SAME endpoint the web platform uses. It calls Binance/OKX
+    /// directly and returns the REAL balance (e.g., $5000), not a stale DB
+    /// value (e.g., $500 from the Portfolio table).
+    ///
+    /// The UI should prefer `liveBalances.effectiveBalance` over
+    /// `portfolioSummary.totalBalance` for the displayed balance.
+    private func loadLiveBalances() async {
+        do {
+            let balances: Balances = try await apiClient.request(.portfolioBalances)
+            self.liveBalances = balances
+        } catch {
+            logger.error("Failed to load live balances: \(error.localizedDescription)")
+            // Don't create a fallback — the portfolioSummary is still available
+            // as a secondary source. The UI will fall back to it automatically.
         }
     }
 }

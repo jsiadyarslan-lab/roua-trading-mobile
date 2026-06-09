@@ -930,14 +930,23 @@ struct HomeView: View {
     // MARK: - Computed Helpers
 
     private var portfolioBalance: String {
-        viewModel.portfolioSummary?.totalBalance.asCurrency() ?? "$0.00"
+        // Prefer LIVE exchange balance (same as web platform uses)
+        // Falls back to portfolioSummary (stale DB) if live balances unavailable
+        if let live = viewModel.liveBalances, live.effectiveBalance > 0 {
+            return live.effectiveBalance.asCurrency()
+        }
+        return viewModel.portfolioSummary?.totalBalance.asCurrency() ?? "$0.00"
     }
 
     private var portfolioValue: String {
-        guard let summary = viewModel.positionsSummary, summary.totalPositionValue > 0 else {
-            return "$0.00"
+        // Prefer live balance, then position summary, then portfolio summary
+        if let live = viewModel.liveBalances, live.effectiveBalance > 0 {
+            return live.effectiveBalance.asCurrency()
         }
-        return summary.totalPositionValue.asCurrency()
+        if let summary = viewModel.positionsSummary, summary.totalPositionValue > 0 {
+            return summary.totalPositionValue.asCurrency()
+        }
+        return "$0.00"
     }
 
     private var dayPnL: String {

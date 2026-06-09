@@ -6,8 +6,11 @@
 // agent state, agent positions, and performance metrics.
 //
 // Key fix: The backend does not have `/portfolio/credentials/balances` or
-// `/agent/trader/*` endpoints. We use `/trading/v2/portfolio` for balance
-// data and `/trading/v2/positions` for agent positions instead.
+// `/agent/trader/*` endpoints. We use `/trading/portfolio` for balance
+// data and `/trading/positions` for agent positions instead.
+// NOTE: Previously used /trading/v2/portfolio and /trading/v2/positions
+// but those routes don't exist on the backend — only /trading/portfolio
+// and /trading/positions exist (under @Controller('trading')).
 // ============================================================================
 
 import Foundation
@@ -42,7 +45,7 @@ final class PortfolioViewModel: ObservableObject {
     /// Portfolio summary with total balance, daily PnL, positions, etc.
     /// Replaces the old `Balances` model — the backend's
     /// `/portfolio/credentials/balances` endpoint doesn't exist, but
-    /// `/trading/v2/portfolio` does and returns richer data.
+    /// `/trading/portfolio` does and returns richer data.
     @Published var portfolioSummary: PortfolioSummary?
 
     /// Comprehensive risk assessment for the portfolio.
@@ -106,10 +109,10 @@ final class PortfolioViewModel: ObservableObject {
 
     // MARK: - Portfolio Summary (was Balances)
 
-    /// Loads portfolio summary via `/trading/v2/portfolio`.
+    /// Loads portfolio summary via `/trading/portfolio`.
     ///
     /// The backend's `/portfolio/credentials/balances` endpoint returns 404.
-    /// `/trading/v2/portfolio` exists and returns `PortfolioSummary` with
+    /// `/trading/portfolio` exists and returns `PortfolioSummary` with
     /// total balance, daily PnL, unrealized PnL, positions, and more.
     func loadPortfolioSummary() async {
         do {
@@ -174,7 +177,7 @@ final class PortfolioViewModel: ObservableObject {
     /// Loads positions currently managed by the autonomous agent.
     ///
     /// The backend's `/agent/trader/open-positions` endpoint returns 404.
-    /// We use `/trading/v2/positions` instead, which returns the same
+    /// We use `/trading/positions` instead, which returns the same
     /// `Position` objects for the authenticated user.
     func loadAgentPositions() async {
         do {

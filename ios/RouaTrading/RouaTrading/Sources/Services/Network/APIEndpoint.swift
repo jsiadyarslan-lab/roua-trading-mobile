@@ -292,8 +292,8 @@ extension APIEndpoint {
         case .tradingV2Orders:                 return "/trading/v2/orders"
         case .tradingV2OrderById(let id):      return "/trading/v2/orders/\(id)"
         case .tradingV2DeleteOrder(let id):    return "/trading/v2/orders/\(id)"
-        case .tradingV2Positions:              return "/trading/v2/positions"
-        case .tradingV2Portfolio:              return "/trading/v2/portfolio"
+        case .tradingV2Positions:              return "/trading/positions"
+        case .tradingV2Portfolio:              return "/trading/portfolio"
 
         // Exchange
         // NOTE: Symbols like "BTC/USD" contain a slash that must be percent-encoded

@@ -258,7 +258,7 @@ struct PositionSummary: Codable {
 
 /// Full portfolio snapshot including balance and positions.
 ///
-/// The backend `/trading/v2/portfolio` returns:
+/// The backend `/trading/portfolio` returns:
 /// ```json
 /// {
 ///   "totalBalance": 0,

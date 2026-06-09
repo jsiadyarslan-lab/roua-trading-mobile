@@ -70,10 +70,10 @@ interface RouaApiService {
     @DELETE("trading/v2/orders/{id}")
     suspend fun cancelV2Order(@Path("id") id: String): OrderResponse
     
-    @GET("trading/v2/positions")
+    @GET("trading/positions")
     suspend fun getV2Positions(): List<Position>
     
-    @GET("trading/v2/portfolio")
+    @GET("trading/portfolio")
     suspend fun getPortfolio(): PortfolioSummary
     
     // MARK: - AI

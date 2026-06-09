@@ -46,11 +46,11 @@ class RouaRepository(engineFactory: HttpClientEngineFactory) {
     
     // MARK: - Trading
     suspend fun getPortfolio(): ApiResult<PortfolioSummary> = safeRequest {
-        client.get("${RouaConfig.BASE_URL}/trading/v2/portfolio") { authHeader() }.body()
+        client.get("${RouaConfig.BASE_URL}/trading/portfolio") { authHeader() }.body()
     }
     
     suspend fun getPositions(): ApiResult<List<Position>> = safeRequest {
-        client.get("${RouaConfig.BASE_URL}/trading/v2/positions") { authHeader() }.body()
+        client.get("${RouaConfig.BASE_URL}/trading/positions") { authHeader() }.body()
     }
     
     suspend fun getQuote(symbol: String): ApiResult<Quote> = safeRequest {
